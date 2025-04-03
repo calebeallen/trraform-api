@@ -2,7 +2,9 @@ package auth
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 	"trraformapi/utils"
 	"trraformapi/utils/schemas"
@@ -27,29 +29,38 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
-
-	if err := utils.Validate.Struct(requestData); err != nil {
+	if err := utils.Validate.Struct(&requestData); err != nil {
 		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
 		return
 	}
 
+	// avoid matching issues
+	requestData.Email = strings.ToLower(requestData.Email)
+
 	usersCollection := utils.MongoDB.Collection("users")
 
-	cursor, err := usersCollection.Find(ctx, bson.D{
-		{Key: "$or", Value: bson.A{
-			bson.D{{Key: "username", Value: ""}},
-			bson.D{{Key: "email", Value: ""}},
-		}},
+	// check if username or email already exists
+	cursor, err := usersCollection.Find(ctx, bson.M{
+		"$or": bson.A{
+			bson.M{"username": requestData.Username},
+			bson.M{"email": requestData.Email},
+		},
 	})
 	if err != nil {
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Query error", true)
+		log.Println(err)
+		requestData.Password = ""
+		utils.LogErrorDiscord("SignUp", err, &requestData)
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
 	defer cursor.Close(ctx)
 
 	var users []schemas.User
 	if err := cursor.All(ctx, &users); err != nil {
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Query error", true)
+		log.Println(err)
+		requestData.Password = ""
+		utils.LogErrorDiscord("SignUp", err, &requestData)
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
 
@@ -73,7 +84,7 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 
 		}
 
-		utils.MakeAPIResponse(w, r, http.StatusOK, exist, "Credentials already exist", true)
+		utils.MakeAPIResponse(w, r, http.StatusConflict, exist, "Credentials already exist", true)
 		return
 
 	}
@@ -81,7 +92,10 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 	// hash password
 	passHash, err := bcrypt.GenerateFromPassword([]byte(requestData.Password), bcrypt.DefaultCost)
 	if err != nil {
-		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid password", true)
+		log.Println(err)
+		requestData.Password = ""
+		utils.LogErrorDiscord("SignUp", err, &requestData)
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
 
@@ -98,12 +112,14 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 		RsxEnd:        time.Time{},
 		Banned:        false,
 	}
-
 	if _, err := usersCollection.InsertOne(ctx, newUser); err != nil {
-		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Could not create user", true)
+		log.Println(err)
+		requestData.Password = ""
+		utils.LogErrorDiscord("SignUp", err, &requestData)
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
 
-	// create token for sending verification email
+	utils.MakeAPIResponse(w, r, http.StatusCreated, nil, "Success", false)
 
 }
