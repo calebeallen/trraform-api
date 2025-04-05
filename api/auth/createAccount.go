@@ -13,14 +13,14 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func SignUp(w http.ResponseWriter, r *http.Request) {
+func CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
 	var requestData struct {
-		Username string `json:"username" validate:"required,max=48"`
+		Username string `json:"username" validate:"required,username"`
 		Email    string `json:"email" validate:"required,email"`
-		Password string `json:"password" validate:"required,min=8,max=128"`
+		Password string `json:"password" validate:"required,password"`
 	}
 
 	// validate request body
@@ -31,6 +31,16 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	if err := utils.Validate.Struct(&requestData); err != nil {
 		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
+		return
+	}
+
+	// hash password and clear it from request data so it is not sent to error logs
+	passHash, err := bcrypt.GenerateFromPassword([]byte(requestData.Password), bcrypt.DefaultCost)
+	requestData.Password = ""
+	if err != nil {
+		log.Println(err)
+		utils.LogErrorDiscord("CreateAccount", err, &requestData)
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
 
@@ -48,18 +58,16 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Println(err)
-		requestData.Password = ""
-		utils.LogErrorDiscord("SignUp", err, &requestData)
+		utils.LogErrorDiscord("CreateAccount", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
 	defer cursor.Close(ctx)
 
-	var users []schemas.User
+	var users []*schemas.User
 	if err := cursor.All(ctx, &users); err != nil {
 		log.Println(err)
-		requestData.Password = ""
-		utils.LogErrorDiscord("SignUp", err, &requestData)
+		utils.LogErrorDiscord("CreateAccount", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
@@ -89,18 +97,8 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	// hash password
-	passHash, err := bcrypt.GenerateFromPassword([]byte(requestData.Password), bcrypt.DefaultCost)
-	if err != nil {
-		log.Println(err)
-		requestData.Password = ""
-		utils.LogErrorDiscord("SignUp", err, &requestData)
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
-		return
-	}
-
 	// create default entry in mongo
-	newUser := schemas.User{
+	newUser := &schemas.User{
 		Ctime:         time.Now().UTC(),
 		Username:      requestData.Username,
 		Email:         requestData.Email,
@@ -109,13 +107,12 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 		GoogleId:      "",
 		Subscribed:    false,
 		PlotCredits:   2,
-		RsxEnd:        time.Time{},
+		RsxEnd:        nil,
 		Banned:        false,
 	}
 	if _, err := usersCollection.InsertOne(ctx, newUser); err != nil {
 		log.Println(err)
-		requestData.Password = ""
-		utils.LogErrorDiscord("SignUp", err, &requestData)
+		utils.LogErrorDiscord("CreateAccount", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}

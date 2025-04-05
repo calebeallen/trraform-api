@@ -13,13 +13,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func PasswordLogin(w http.ResponseWriter, r *http.Request) {
+func PasswordLogIn(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
 	var requestData struct {
 		Email    string `json:"email" validate:"required,email"`
-		Password string `json:"password" validate:"required,min=8,max=128"`
+		Password string `json:"password" validate:"required,password"`
 	}
 
 	var responseData struct {

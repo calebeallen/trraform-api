@@ -2,6 +2,7 @@ package utils
 
 import (
 	"net/http"
+	"regexp"
 
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/go-chi/render"
@@ -16,6 +17,22 @@ var MongoDB *mongo.Database
 var AwsSESCli *ses.Client
 
 var Validate = validator.New()
+
+func init() {
+
+	Validate.RegisterValidation("username", func(fl validator.FieldLevel) bool {
+		username := fl.Field().String()
+		re := regexp.MustCompile(`^[a-zA-Z0-9._]{3,32}$`)
+		return re.MatchString(username)
+	})
+
+	Validate.RegisterValidation("password", func(fl validator.FieldLevel) bool {
+		password := fl.Field().String()
+		re := regexp.MustCompile(`^[A-Za-z0-9~` + "`" + `!@#$%^&*()_\-+={[}\]|\\:;"'<,>.?/]{8,128}$`)
+		return re.MatchString(password)
+	})
+
+}
 
 type APIResponse struct {
 	Code    int    `json:"code"`

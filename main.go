@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"trraformapi/api/auth"
 	"trraformapi/utils"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -77,9 +78,18 @@ func main() {
 	router.Use(cors.Handler(cors.Options{
 		AllowedOrigins: []string{"*"},
 		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders: []string{"Content-Type", "Authorization"},
+		AllowedHeaders: []string{"Content-Type"},
 	}))
 	router.Use(middleware.Recoverer)
+
+	// auth endpoints
+	router.Post("/auth/create-account", auth.CreateAccount)
+	router.Post("/auth/password-login", auth.PasswordLogIn)
+	router.Post("/auth/google-login", auth.GoogleLogIn)
+	router.Post("/auth/send-verification-email", auth.SendVerificationEmail)
+	router.Post("/auth/verify-email", auth.VerifyEmail)
+	router.Post("/auth/sent-password-reset-email", auth.SendPasswordResetEmail)
+	router.Post("/auth/reset-password", auth.ResetPassword)
 
 	fmt.Println("Server starting")
 	http.ListenAndServe(":8080", router)

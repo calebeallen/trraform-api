@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 type AuthToken struct {
@@ -49,7 +49,7 @@ func ValidateAndRefreshAuthToken(w http.ResponseWriter, r *http.Request) (*AuthT
 
 }
 
-func CreateNewAuthToken(uid primitive.ObjectID) *AuthToken {
+func CreateNewAuthToken(uid bson.ObjectID) *AuthToken {
 
 	token := AuthToken{Uid: uid.Hex()}
 	token.Refresh()
@@ -89,9 +89,9 @@ func (authToken *AuthToken) SetCookie(w http.ResponseWriter) error {
 
 }
 
-func (authToken *AuthToken) UidObjectID() (*primitive.ObjectID, error) {
+func (authToken *AuthToken) UidObjectID() (*bson.ObjectID, error) {
 
-	objId, err := primitive.ObjectIDFromHex(authToken.Uid)
+	objId, err := bson.ObjectIDFromHex(authToken.Uid)
 	if err != nil {
 		return nil, fmt.Errorf("in UidObjectID:\n%w", err)
 	}
@@ -102,6 +102,6 @@ func (authToken *AuthToken) UidObjectID() (*primitive.ObjectID, error) {
 func (authToken *AuthToken) sign() (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, authToken)
-	return token.SignedString(os.Getenv("JWT_SECRET"))
+	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
 
 }

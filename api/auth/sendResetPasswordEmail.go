@@ -12,7 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
-func SendVerificationEmail(w http.ResponseWriter, r *http.Request) {
+func SendPasswordResetEmail(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
@@ -45,27 +45,20 @@ func SendVerificationEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		log.Println(err)
-		utils.LogErrorDiscord("ResendVerificationEmail", err, &requestData)
+		utils.LogErrorDiscord("SendPasswordResetEmail", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
-		return
-	}
-
-	// return if user is already verified
-	if user.EmailVerified {
-		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "User already verified", true)
 		return
 	}
 
 	// resend email
-	emailStatus, err := utils.SendVerificationEmail(ctx, requestData.Email)
+	emailStatus, err := utils.SendResetPasswordEmail(ctx, requestData.Email)
 	if err != nil {
 		log.Println(err)
-		utils.LogErrorDiscord("ResendVerificationEmail", err, &requestData)
+		utils.LogErrorDiscord("SendPasswordResetEmail", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
 
-	// respond with email status
 	utils.MakeAPIResponse(w, r, http.StatusOK, emailStatus, "Success", false)
 
 }

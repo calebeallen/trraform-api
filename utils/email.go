@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/aws/aws-sdk-go-v2/service/ses/types"
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 )
 
 type EmailStatus struct {
@@ -20,39 +19,12 @@ type EmailStatus struct {
 
 func SendVerificationEmail(ctx context.Context, to string) (*EmailStatus, error) {
 
-	cooldownKey := "email:verify:cooldown:" + to // cooldown only used in this function. For rate limiting
-	tokenKey := "email:verify:token:" + to
-
-	// check if cooldown has passed
-	ttl, err := RedisCli.TTL(ctx, cooldownKey).Result()
-	if err != redis.Nil {
-		return &EmailStatus{
-			Sent:     false,
-			Cooldown: ttl.Seconds(),
-		}, nil
-	} else if err != nil {
-		return nil, fmt.Errorf("in SendVerificationEmail:\n%w", err)
-	}
-
-	// set cooldown
-	cooldown := time.Minute
-	_, err = RedisCli.Set(ctx, cooldownKey, "1", cooldown).Result()
-	if err != nil {
-		return nil, fmt.Errorf("in SendVerificationEmail:\n%w", err)
-	}
-
-	// create and store new token (valid for 2 hours)
-	token := uuid.New().String()
-	_, err = RedisCli.Set(ctx, tokenKey, token, time.Hour*2).Result()
-	if err != nil {
-		return nil, fmt.Errorf("in SendVerificationEmail:\n%w", err)
-	}
-
 	// send email with token
+	token := uuid.New().String()
 	encodedToken := url.QueryEscape(token)
 	encodedEmail := url.QueryEscape(to)
 	verifyUrl := fmt.Sprintf("%s/auth/verify-email?token=%s&email=%s", Origin, encodedToken, encodedEmail)
-	htmlBody := fmt.Sprintf(`
+	html := fmt.Sprintf(`
 		<!DOCTYPE html>
 		<html>
 			<body style="font-family: Arial, sans-serif; padding: 20px;">
@@ -63,6 +35,62 @@ func SendVerificationEmail(ctx context.Context, to string) (*EmailStatus, error)
 		</html>
 	`, verifyUrl)
 
+	return sendEmail(ctx, "verify", to, token, "Verify your email", html)
+
+}
+
+func SendResetPasswordEmail(ctx context.Context, to string) (*EmailStatus, error) {
+
+	token := uuid.New().String()
+	encodedToken := url.QueryEscape(token)
+	encodedEmail := url.QueryEscape(to)
+	url := fmt.Sprintf("%s/auth/reset-password?token=%s&email=%s", Origin, encodedToken, encodedEmail)
+	html := fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+			<body style="font-family: Arial, sans-serif; padding: 20px;">
+				<h2>Reset password!</h2>
+				<p>Click the link below to reset your password.</p>
+				<p><a href="%s">Reset</a></p>
+			</body>
+		</html>
+	`, url)
+
+	return sendEmail(ctx, "reset", to, token, "Reset password", html)
+
+}
+
+func sendEmail(ctx context.Context, redisSet string, to string, token string, subject string, html string) (*EmailStatus, error) {
+
+	cooldownKey := fmt.Sprintf("email:%s:cooldown:%s", redisSet, to) // cooldown only used in this function. For rate limiting
+	tokenKey := fmt.Sprintf("email:%s:token:%s", redisSet, to)
+
+	// check if cooldown has passed
+	ttl, err := RedisCli.TTL(ctx, cooldownKey).Result()
+	if err != nil {
+		return nil, fmt.Errorf("in sendEmail:\n%w", err)
+	}
+	if ttl > 0 {
+		return &EmailStatus{
+			Sent:     false,
+			Cooldown: ttl.Seconds(),
+		}, nil
+	}
+
+	// set cooldown
+	cooldown := time.Minute * 2
+	_, err = RedisCli.Set(ctx, cooldownKey, "1", cooldown).Result()
+	if err != nil {
+		return nil, fmt.Errorf("in sendEmail:\n%w", err)
+	}
+
+	// set token
+	_, err = RedisCli.Set(ctx, tokenKey, token, time.Hour*2).Result()
+	if err != nil {
+		return nil, fmt.Errorf("in sendEmail:\n%w", err)
+	}
+
+	// prep email
 	emailInput := &ses.SendEmailInput{
 		Source: aws.String("no-reply@trraform.com"), // your verified sender
 		Destination: &types.Destination{
@@ -70,10 +98,10 @@ func SendVerificationEmail(ctx context.Context, to string) (*EmailStatus, error)
 		},
 		Message: &types.Message{
 			Subject: &types.Content{
-				Data: aws.String("Verify your email"),
+				Data: aws.String(subject),
 			},
 			Body: &types.Body{
-				Html: &types.Content{Data: aws.String(htmlBody)},
+				Html: &types.Content{Data: aws.String(html)},
 			},
 		},
 	}
@@ -84,13 +112,13 @@ func SendVerificationEmail(ctx context.Context, to string) (*EmailStatus, error)
 		log := struct {
 			Email string `json:"email"`
 		}{Email: to}
-		LogErrorDiscord("SendVerificationEmail", err, log)
-		return nil, fmt.Errorf("in SendVerificationEmail:\n%w", err)
+		LogErrorDiscord("in sendEmail:\n%w", err, log)
+		return nil, fmt.Errorf("in sendEmail:\n%w", err)
 	}
 
 	status := EmailStatus{
 		Sent:     true,
-		Cooldown: cooldown.Minutes(),
+		Cooldown: cooldown.Seconds(),
 	}
 
 	return &status, nil
