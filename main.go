@@ -88,7 +88,7 @@ func main() {
 	router.Post("/auth/google-login", auth.GoogleLogIn)
 	router.Post("/auth/send-verification-email", auth.SendVerificationEmail)
 	router.Post("/auth/verify-email", auth.VerifyEmail)
-	router.Post("/auth/sent-password-reset-email", auth.SendPasswordResetEmail)
+	router.Post("/auth/send-password-reset-email", auth.SendPasswordResetEmail)
 	router.Post("/auth/reset-password", auth.ResetPassword)
 
 	fmt.Println("Server starting")

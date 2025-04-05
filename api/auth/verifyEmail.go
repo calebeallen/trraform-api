@@ -50,15 +50,22 @@ func VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// set verification status
 	usersCollection := utils.MongoDB.Collection("users")
-	usersCollection.UpdateOne(ctx, bson.M{
+
+	// set verification status
+	_, err = usersCollection.UpdateOne(ctx, bson.M{
 		"email": requestData.Email,
 	}, bson.M{
 		"$set": bson.M{
 			"emailVerified": true,
 		},
 	})
+	if err != nil {
+		log.Println(err)
+		utils.LogErrorDiscord("VerifyEmail", err, &requestData)
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		return
+	}
 
 	// delete token
 	_, err = utils.RedisCli.Del(ctx, redisKey).Result()

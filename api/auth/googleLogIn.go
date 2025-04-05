@@ -44,7 +44,6 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 	// username required to be unique when creating account from front end, but it doesn't really matter.
 	googleId := payload.Claims["sub"].(string)
 	email := payload.Claims["email"].(string)
-	emailVerified := payload.Claims["email_verified"].(bool)
 	username := strings.Split(email, "@")[0]
 	if len(username) > 32 {
 		username = username[:32]
@@ -63,8 +62,8 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 		user = &schemas.User{
 			Ctime:         time.Now().UTC(),
 			Username:      username,
-			Email:         email,
-			EmailVerified: emailVerified,
+			Email:         "",
+			EmailVerified: false,
 			PassHash:      "",
 			GoogleId:      googleId,
 			Subscribed:    false,

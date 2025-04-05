@@ -63,15 +63,22 @@ func ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// reset password
 	usersCollection := utils.MongoDB.Collection("users")
-	usersCollection.UpdateOne(ctx, bson.M{
+
+	// reset password
+	_, err = usersCollection.UpdateOne(ctx, bson.M{
 		"email": requestData.Email,
 	}, bson.M{
 		"$set": bson.M{
 			"passHash": string(passHash),
 		},
 	})
+	if err != nil {
+		log.Println(err)
+		utils.LogErrorDiscord("ResetPassword", err, &requestData)
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		return
+	}
 
 	// delete token
 	_, err = utils.RedisCli.Del(ctx, redisKey).Result()
