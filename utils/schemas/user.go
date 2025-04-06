@@ -23,6 +23,6 @@ type User struct {
 	GoogleId      string        `bson:"googleId"`
 	Subscribed    bool          `bson:"subscribed"`
 	PlotCredits   int           `bson:"plotCredits"`
-	PlotIds       []int64       `bson:"plotIds"`
+	PlotIds       []string      `bson:"plotIds"`
 	Offenses      []Offense     `bson:"offenses"`
 }

@@ -104,7 +104,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		Email:       requestData.Email,
 		PassHash:    string(passHash),
 		PlotCredits: 2,
-		PlotIds:     []int64{},
+		PlotIds:     []string{},
 		Offenses:    []schemas.Offense{},
 	}
 

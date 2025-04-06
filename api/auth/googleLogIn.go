@@ -66,7 +66,7 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 			Username:    username,
 			GoogleId:    googleId,
 			PlotCredits: 2,
-			PlotIds:     []int64{},
+			PlotIds:     []string{},
 			Offenses:    []schemas.Offense{},
 		}
 
