@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-func LogErrorDiscord(apiName string, errLog error, jsonPayload any) {
+func LogErrorDiscord(endpoint string, errLog error, jsonPayload any) {
 
-	msg := fmt.Sprintf("=================================\n\nError in **%s**\n\nLog:\n```\n%v\n```", apiName, errLog)
+	msg := fmt.Sprintf("=================================\n\nError in **%s**\n\nLog:\n```\n%v\n```", endpoint, errLog)
 
 	if jsonPayload != nil {
 

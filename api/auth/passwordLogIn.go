@@ -23,9 +23,10 @@ func PasswordLogIn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var responseData struct {
-		UserExists      bool `json:"userExists"`
-		PasswordCorrect bool `json:"passwordCorrect"`
-		EmailVerified   bool `json:"emailVerified"`
+		UserExists      bool   `json:"userExists"`
+		PasswordCorrect bool   `json:"passwordCorrect"`
+		EmailVerified   bool   `json:"emailVerified"`
+		Token           string `json:"token"`
 	}
 	responseData.UserExists = false
 	responseData.PasswordCorrect = false
@@ -78,13 +79,14 @@ func PasswordLogIn(w http.ResponseWriter, r *http.Request) {
 
 	// issue jwt
 	authToken := utils.CreateNewAuthToken(user.Id)
-	if err := authToken.SetCookie(w); err != nil {
+	authTokenStr, err := authToken.Sign()
+	if err != nil {
 		log.Println(err)
-		requestData.Password = ""
 		utils.LogErrorDiscord("PasswordLogIn", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
+	responseData.Token = authTokenStr
 
 	utils.MakeAPIResponse(w, r, http.StatusOK, &responseData, "Success", false)
 

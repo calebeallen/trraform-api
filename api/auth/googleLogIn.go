@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,7 +11,7 @@ import (
 	"trraformapi/utils"
 	"trraformapi/utils/schemas"
 
-	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"google.golang.org/api/idtoken"
 )
@@ -20,7 +21,7 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var requestData struct {
-		Token string `json:"token" validate:"required"`
+		Token string `json:"token" validate:"required"` //google token
 	}
 
 	// validate request body
@@ -60,16 +61,13 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 	if err == mongo.ErrNoDocuments {
 
 		user = &schemas.User{
-			Ctime:         time.Now().UTC(),
-			Username:      username,
-			Email:         "",
-			EmailVerified: false,
-			PassHash:      "",
-			GoogleId:      googleId,
-			Subscribed:    false,
-			PlotCredits:   2,
-			RsxEnd:        nil,
-			Banned:        false,
+			Id:          bson.NewObjectID(),
+			Ctime:       time.Now().UTC(),
+			Username:    username,
+			GoogleId:    googleId,
+			PlotCredits: 2,
+			PlotIds:     []int64{},
+			Offenses:    []schemas.Offense{},
 		}
 
 		if _, err := usersCollection.InsertOne(ctx, user); err != nil {
@@ -88,13 +86,18 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 
 	// issue jwt
 	authToken := utils.CreateNewAuthToken(user.Id)
-	if err := authToken.SetCookie(w); err != nil {
+	fmt.Println(authToken)
+	authTokenStr, err := authToken.Sign()
+	if err != nil {
 		log.Println(err)
 		utils.LogErrorDiscord("GoogleLogIn", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
+	responseData := struct {
+		Token string `json:"token"`
+	}{Token: authTokenStr}
 
-	utils.MakeAPIResponse(w, r, http.StatusOK, nil, "Success", false)
+	utils.MakeAPIResponse(w, r, http.StatusOK, &responseData, "Success", false)
 
 }

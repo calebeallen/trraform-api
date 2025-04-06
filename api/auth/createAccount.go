@@ -99,17 +99,15 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 	// create default entry in mongo
 	newUser := &schemas.User{
-		Ctime:         time.Now().UTC(),
-		Username:      requestData.Username,
-		Email:         requestData.Email,
-		EmailVerified: false,
-		PassHash:      string(passHash),
-		GoogleId:      "",
-		Subscribed:    false,
-		PlotCredits:   2,
-		RsxEnd:        nil,
-		Banned:        false,
+		Ctime:       time.Now().UTC(),
+		Username:    requestData.Username,
+		Email:       requestData.Email,
+		PassHash:    string(passHash),
+		PlotCredits: 2,
+		PlotIds:     []int64{},
+		Offenses:    []schemas.Offense{},
 	}
+
 	if _, err := usersCollection.InsertOne(ctx, newUser); err != nil {
 		log.Println(err)
 		utils.LogErrorDiscord("CreateAccount", err, &requestData)

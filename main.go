@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"trraformapi/api/auth"
+	"trraformapi/api/user"
 	"trraformapi/utils"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -76,13 +77,14 @@ func main() {
 
 	// Middleware
 	router.Use(cors.Handler(cors.Options{
-		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders: []string{"Content-Type"},
+		AllowedOrigins:   []string{"http://localhost:5173"},
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization"},
+		AllowCredentials: true,
 	}))
 	router.Use(middleware.Recoverer)
 
-	// auth endpoints
+	// auth endpoints (add captcha)
 	router.Post("/auth/create-account", auth.CreateAccount)
 	router.Post("/auth/password-login", auth.PasswordLogIn)
 	router.Post("/auth/google-login", auth.GoogleLogIn)
@@ -90,6 +92,9 @@ func main() {
 	router.Post("/auth/verify-email", auth.VerifyEmail)
 	router.Post("/auth/send-password-reset-email", auth.SendPasswordResetEmail)
 	router.Post("/auth/reset-password", auth.ResetPassword)
+
+	// user endpoints
+	router.Get("/user/data", user.GetUserData)
 
 	fmt.Println("Server starting")
 	http.ListenAndServe(":8080", router)

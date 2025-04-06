@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -15,81 +16,59 @@ type AuthToken struct {
 	jwt.RegisteredClaims
 }
 
-func ValidateAndRefreshAuthToken(w http.ResponseWriter, r *http.Request) (*AuthToken, error) {
+func CreateNewAuthToken(uid bson.ObjectID) *AuthToken {
 
-	cookie, err := r.Cookie("auth_token")
-	if err != nil {
-		return nil, fmt.Errorf("in ValidateAndRefreshAuthToken: %w", err)
+	token := AuthToken{Uid: uid.Hex()}
+	token.refresh()
+	return &token
+
+}
+
+func ValidateAuthToken(r *http.Request) (*AuthToken, error) {
+
+	header := r.Header.Get("Authorization")
+	if header == "" {
+		return nil, fmt.Errorf("in ParseAuthToken: missing token")
 	}
 
-	tokenStr := cookie.Value
+	parts := strings.Split(header, " ")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("in ParseAuthToken: invalid token format")
+	}
+	token := parts[1]
 
 	// validate token
 	var authToken AuthToken
-	_, err = jwt.ParseWithClaims(tokenStr, &authToken, func(token *jwt.Token) (any, error) {
-		return os.Getenv("JWT_SECRET"), nil
+	_, err := jwt.ParseWithClaims(token, &authToken, func(token *jwt.Token) (any, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("in ParseAuthToken:\n%w", err)
 	}
 
-	//return if expired
-	timeLeft := authToken.ExpiresAt.Sub(time.Now().UTC())
-	if timeLeft <= 0 {
-		return nil, fmt.Errorf("in ParseAuthToken:\n%w", err)
-	}
-
-	// refresh 1 month before expire
-	if timeLeft <= time.Hour*24*7*4 {
-		authToken.Refresh()
-		authToken.SetCookie(w)
+	// error if expired
+	if time.Now().UTC().After(authToken.ExpiresAt.Time) {
+		return nil, fmt.Errorf("in ParseAuthToken: token expired")
 	}
 
 	return &authToken, nil
 
 }
 
-func CreateNewAuthToken(uid bson.ObjectID) *AuthToken {
+func (authToken *AuthToken) Sign() (string, error) {
 
-	token := AuthToken{Uid: uid.Hex()}
-	token.Refresh()
-	return &token
-
-}
-
-func (authToken *AuthToken) Refresh() {
-
-	now := time.Now().UTC()
-	authToken.RegisteredClaims = jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour * 24 * 7 * 4 * 6)), //6 months
-		IssuedAt:  jwt.NewNumericDate(now),
-		Issuer:    "trraformapi",
-	}
-
-}
-
-func (authToken *AuthToken) SetCookie(w http.ResponseWriter) error {
-
-	tokenStr, err := authToken.sign()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, authToken)
+	key := []byte(os.Getenv("JWT_SECRET"))
+	signed, err := token.SignedString(key)
 	if err != nil {
-		return fmt.Errorf("in writeToHeader:\n%w", err)
+		return "", fmt.Errorf("in writeToHeader:\n%w", err)
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth_token",
-		Value:    tokenStr,
-		Expires:  time.Now().UTC().AddDate(1, 0, 0),
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
-
-	return nil
+	return "Bearer " + signed, nil
 
 }
 
-func (authToken *AuthToken) UidObjectID() (*bson.ObjectID, error) {
+func (authToken *AuthToken) GetUidObjectId() (*bson.ObjectID, error) {
 
 	objId, err := bson.ObjectIDFromHex(authToken.Uid)
 	if err != nil {
@@ -99,9 +78,23 @@ func (authToken *AuthToken) UidObjectID() (*bson.ObjectID, error) {
 
 }
 
-func (authToken *AuthToken) sign() (string, error) {
+func (authToken *AuthToken) Refresh() {
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, authToken)
-	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	//if expiring in < 1 month refresh token
+	timeTillExpire := authToken.ExpiresAt.Sub(time.Now().UTC())
+	if timeTillExpire <= time.Hour*24*7*4 {
+		authToken.refresh()
+	}
+
+}
+
+func (authToken *AuthToken) refresh() {
+
+	now := time.Now().UTC()
+	authToken.RegisteredClaims = jwt.RegisteredClaims{
+		ExpiresAt: jwt.NewNumericDate(now.AddDate(0, 6, 0)), //6 months
+		IssuedAt:  jwt.NewNumericDate(now),
+		Issuer:    "trraformapi",
+	}
 
 }
