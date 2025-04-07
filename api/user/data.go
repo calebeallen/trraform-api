@@ -18,7 +18,7 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 		Username    string            `json:"username"`
 		Subscribed  bool              `json:"subscribed"`
 		PlotCredits int               `json:"plotCredits"`
-		PlotIds     []int64           `json:"plotIds"`
+		PlotIds     []string          `json:"plotIds"`
 		Offenses    []schemas.Offense `json:"offenses"`
 	}
 

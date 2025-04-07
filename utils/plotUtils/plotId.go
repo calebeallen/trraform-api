@@ -1,8 +1,9 @@
-package utils
+package plotutils
 
 import (
 	"fmt"
 	"strconv"
+	"trraformapi/utils"
 )
 
 type PlotId struct {
@@ -68,7 +69,7 @@ func (plotId *PlotId) Verify() bool {
 	idCopy := plotId.Id
 	localId := idCopy & 0xffffff
 
-	if localId == 0 || localId > Depth0Count {
+	if localId == 0 || localId > utils.Depth0Count {
 		return false
 	}
 
@@ -77,7 +78,7 @@ func (plotId *PlotId) Verify() bool {
 	for depth := 0; idCopy > 0 && depth < 2; depth++ {
 
 		localId = idCopy & 0xfff
-		if localId == 0 || localId > SubplotCount {
+		if localId == 0 || localId > utils.SubplotCount {
 			return false
 		}
 		idCopy >>= 12
