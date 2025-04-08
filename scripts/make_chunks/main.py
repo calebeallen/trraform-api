@@ -16,7 +16,7 @@ def i2p(idx, size):
 
     s2 = size * size
 
-    return ( idx % size, int(idx / s2), int( (idx % s2 ) / size ) )
+    return [ idx % size, int(idx / s2), int( (idx % s2 ) / size ) ]
 
 def expand(condensed):
     # We don't need to preallocate since we can use list append.
@@ -45,19 +45,33 @@ with open("./0x00", "rb") as file:
     file.close()
 
 expanded = expand(condensed)
+idxs = []
 points = []
 build_size = condensed[1]
 bs2 = build_size * build_size
 
+ 
+
 for i in range(len(expanded)):
 
-    pos = i2p(i, build_size)
     val = expanded[i]
 
-    if val == 0 and (pos[1] == 0 or expanded[i - bs2] > 24):
-        points.append([pos[0], pos[1], pos[2]])
+    if val != 0 and (i + bs2 >= len(expanded) or expanded[i + bs2] == 0):
+        idxs.append(i)
+        points.append(i2p(i, build_size))
     
-points_array = np.array(points[0:10000])
+
+points_array = np.array(points)
 clusters = constrained_hierarchical_clustering(points_array, max_cluster_size=6)
 
-print(len(clusters))
+output = ""
+
+for i in range(len(clusters)):
+
+    for p in clusters[i]:
+        idx = idxs[p]
+        output += f"{i}:{idx}\n"
+
+with open("./output.txt", "w") as file:
+    file.write(output)
+    file.close
