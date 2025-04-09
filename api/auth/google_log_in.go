@@ -1,9 +1,9 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
-	"log"
+	"errors"
 	"net/http"
 	"os"
 	"strings"
@@ -58,7 +58,7 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 	err = res.Decode(&user)
 
 	// create new user if not found
-	if err == mongo.ErrNoDocuments {
+	if errors.Is(err, mongo.ErrNoDocuments) {
 
 		user = &schemas.User{
 			Id:          bson.NewObjectID(),
@@ -71,25 +71,25 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if _, err := usersCollection.InsertOne(ctx, user); err != nil {
-			log.Println(err)
-			utils.LogErrorDiscord("GoogleLogIn", err, &requestData)
+			if !errors.Is(err, context.Canceled) {
+				utils.LogErrorDiscord("GoogleLogIn", err, &requestData)
+			}
 			utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 			return
 		}
 
 	} else if err != nil {
-		log.Println(err)
-		utils.LogErrorDiscord("GoogleLogIn", err, &requestData)
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("GoogleLogIn", err, &requestData)
+		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
 
 	// issue jwt
 	authToken := utils.CreateNewAuthToken(user.Id)
-	fmt.Println(authToken)
 	authTokenStr, err := authToken.Sign()
 	if err != nil {
-		log.Println(err)
 		utils.LogErrorDiscord("GoogleLogIn", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return

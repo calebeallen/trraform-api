@@ -1,7 +1,8 @@
 package user
 
 import (
-	"log"
+	"context"
+	"errors"
 	"net/http"
 	"trraformapi/utils"
 	"trraformapi/utils/schemas"
@@ -35,8 +36,7 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 
 	uid, err := token.GetUidObjectId()
 	if err != nil {
-		log.Println(err)
-		utils.LogErrorDiscord("/user/data", err, token)
+		utils.LogErrorDiscord("GetUserData", err, token)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
@@ -48,8 +48,9 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 	var user schemas.User
 	err = query.Decode(&user)
 	if err != nil {
-		log.Println(err)
-		utils.LogErrorDiscord("/user/data", err, token)
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("GetUserData", err, token)
+		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}

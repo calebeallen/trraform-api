@@ -73,5 +73,6 @@ require (
 	github.com/go-chi/cors v1.2.1
 	github.com/go-chi/render v1.0.3
 	github.com/joho/godotenv v1.5.1
+	github.com/rivo/uniseg v0.4.7
 	go.mongodb.org/mongo-driver v1.17.3
 )

@@ -1,8 +1,9 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
-	"log"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -34,11 +35,10 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// hash password and clear it from request data so it is not sent to error logs
+	// hash password and clear it from request data to sanitize logs
 	passHash, err := bcrypt.GenerateFromPassword([]byte(requestData.Password), bcrypt.DefaultCost)
 	requestData.Password = ""
 	if err != nil {
-		log.Println(err)
 		utils.LogErrorDiscord("CreateAccount", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
@@ -57,8 +57,9 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
-		log.Println(err)
-		utils.LogErrorDiscord("CreateAccount", err, &requestData)
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("CreateAccount", err, &requestData)
+		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
@@ -66,8 +67,9 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 	var users []*schemas.User
 	if err := cursor.All(ctx, &users); err != nil {
-		log.Println(err)
-		utils.LogErrorDiscord("CreateAccount", err, &requestData)
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("CreateAccount", err, &requestData)
+		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
@@ -109,8 +111,9 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := usersCollection.InsertOne(ctx, newUser); err != nil {
-		log.Println(err)
-		utils.LogErrorDiscord("CreateAccount", err, &requestData)
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("CreateAccount", err, &requestData)
+		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}

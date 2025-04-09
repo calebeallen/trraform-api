@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"trraformapi/api/auth"
+	"trraformapi/api/plot"
 	"trraformapi/api/user"
 	"trraformapi/utils"
 
@@ -95,6 +96,10 @@ func main() {
 
 	// user endpoints
 	router.Get("/user/data", user.GetUserData)
+
+	// plot endpoints
+	router.Post("/plot/claim-with-credit", plot.ClaimWithCredit)
+	router.Post("/plot/update", plot.UpdatePlot)
 
 	fmt.Println("Server starting")
 	http.ListenAndServe(":8080", router)

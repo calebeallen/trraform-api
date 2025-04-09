@@ -1,8 +1,9 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
-	"log"
+	"errors"
 	"net/http"
 	"strings"
 	"trraformapi/utils"
@@ -50,13 +51,14 @@ func PasswordLogIn(w http.ResponseWriter, r *http.Request) {
 	// find user
 	var user schemas.User
 	err := usersCollection.FindOne(ctx, bson.M{"email": strings.ToLower(requestData.Email)}).Decode(&user)
-	if err == mongo.ErrNoDocuments { //doesn't exist, return
+	if errors.Is(err, mongo.ErrNoDocuments) { //doesn't exist, return
 		utils.MakeAPIResponse(w, r, http.StatusNotFound, &responseData, "User does not exist", true)
 		return
 	} else if err != nil {
-		log.Println(err)
-		requestData.Password = ""
-		utils.LogErrorDiscord("PasswordLogIn", err, &requestData)
+		if !errors.Is(err, context.Canceled) {
+			requestData.Password = ""
+			utils.LogErrorDiscord("PasswordLogIn", err, &requestData)
+		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
@@ -68,6 +70,7 @@ func PasswordLogIn(w http.ResponseWriter, r *http.Request) {
 		utils.MakeAPIResponse(w, r, http.StatusForbidden, &responseData, "Incorrect password", true)
 		return
 	}
+	requestData.Password = "" // sanitize logs
 	responseData.PasswordCorrect = true
 
 	// check email verification
@@ -81,7 +84,6 @@ func PasswordLogIn(w http.ResponseWriter, r *http.Request) {
 	authToken := utils.CreateNewAuthToken(user.Id)
 	authTokenStr, err := authToken.Sign()
 	if err != nil {
-		log.Println(err)
 		utils.LogErrorDiscord("PasswordLogIn", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return

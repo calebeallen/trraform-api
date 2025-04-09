@@ -1,24 +1,28 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
-	"log"
+	"errors"
 	"net/http"
 	"trraformapi/utils"
 
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"golang.org/x/crypto/bcrypt"
 )
 
-func VerifyEmail(w http.ResponseWriter, r *http.Request) {
+func ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
 	// validate request data
 	var requestData struct {
-		Token string `json:"token" validate:"required"`
-		Email string `json:"email" validate:"required,email"`
+		Token       string `json:"token" validate:"required"`
+		Email       string `json:"email" validate:"required,email"`
+		NewPassword string `json:"newPassword" validate:"required,password"`
 	}
+
 	// validate request body
 	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
 		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
@@ -30,21 +34,31 @@ func VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redisKey := "email:verify:token:" + requestData.Email
-
-	// validate token by first checking if it exists in redis
-	redisToken, err := utils.RedisCli.Get(ctx, redisKey).Result()
-	if err == redis.Nil { // if token not found (expired)
-		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Expired token", true)
-		return
-	} else if err != nil {
-		log.Println(err)
-		utils.LogErrorDiscord("VerifyEmail", err, &requestData)
+	// hash password and clear it from request data so it is not sent to error logs
+	passHash, err := bcrypt.GenerateFromPassword([]byte(requestData.NewPassword), bcrypt.DefaultCost)
+	requestData.NewPassword = ""
+	if err != nil {
+		utils.LogErrorDiscord("ResetPassword", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
 
-	// validate that token in redis is the same as query param token
+	redisKey := "email:reset:token:" + requestData.Email
+
+	// validate token by first checking if it exists in redis
+	redisToken, err := utils.RedisCli.Get(ctx, redisKey).Result()
+	if errors.Is(err, redis.Nil) { // if token not found (expired)
+		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Expired token", true)
+		return
+	} else if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("ResetPassword", err, &requestData)
+		}
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		return
+	}
+
+	// validate that token in redis is the same as one sent
 	if redisToken != requestData.Token {
 		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Invalid token", true)
 		return
@@ -52,17 +66,18 @@ func VerifyEmail(w http.ResponseWriter, r *http.Request) {
 
 	usersCollection := utils.MongoDB.Collection("users")
 
-	// set verification status
+	// reset password
 	_, err = usersCollection.UpdateOne(ctx, bson.M{
 		"email": requestData.Email,
 	}, bson.M{
 		"$set": bson.M{
-			"emailVerified": true,
+			"passHash": string(passHash),
 		},
 	})
 	if err != nil {
-		log.Println(err)
-		utils.LogErrorDiscord("VerifyEmail", err, &requestData)
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("ResetPassword", err, &requestData)
+		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
@@ -70,8 +85,9 @@ func VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	// delete token
 	_, err = utils.RedisCli.Del(ctx, redisKey).Result()
 	if err != nil {
-		log.Println(err)
-		utils.LogErrorDiscord("VerifyEmail", err, &requestData)
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("ResetPassword", err, &requestData)
+		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}

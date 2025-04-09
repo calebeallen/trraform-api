@@ -12,6 +12,8 @@ import (
 
 func LogErrorDiscord(endpoint string, errLog error, jsonPayload any) {
 
+	log.Println(errLog)
+
 	msg := fmt.Sprintf("=================================\n\nError in **%s**\n\nLog:\n```\n%v\n```", endpoint, errLog)
 
 	if jsonPayload != nil {

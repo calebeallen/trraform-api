@@ -8,7 +8,6 @@ import (
 	"image/color"
 	"image/png"
 	"math"
-	"trraformapi/utils"
 )
 
 const ImgRes = 1080
@@ -48,7 +47,7 @@ func sign(x int) int {
 
 }
 
-func CreateBuildImage(buildImageData []byte, depth int) (*bytes.Buffer, error) {
+func CreateBuildImage(buildImageData []byte) (*bytes.Buffer, error) {
 
 	dataLen := len(buildImageData)
 
@@ -245,102 +244,3 @@ func CreateBuildImage(buildImageData []byte, depth int) (*bytes.Buffer, error) {
 	return &buf, nil
 
 }
-
-func ValidateBuildData(data []uint16) bool {
-
-	// must contain at least 2 values (version, build size)
-	if len(data) < 2 {
-		return false
-	}
-
-	_, bs := data[0], int(data[1])
-	bs3 := bs * bs * bs
-
-	// create array to track subplots
-	var subplotsUsed [utils.SubplotCount]bool
-	for i := range subplotsUsed {
-		subplotsUsed[i] = false
-	}
-
-	data = data[2:]
-	blkCnt := 0
-
-	// check that each block is valid, count blocks
-	for i := range data {
-
-		write, val := data[i]&1, data[i]>>1
-
-		if write == 1 {
-
-			if val > utils.MaxColorIndex {
-				return false
-			}
-
-			//if subplot
-			if val > 0 && val <= utils.SubplotCount {
-
-				// if subplot is already placed, it can't be placed again
-				if subplotsUsed[val-1] {
-					return false
-				}
-
-				// next value must not be a repeat type
-				if i+1 < len(data) && data[i+1]&1 == 0 {
-					return false
-				}
-
-				subplotsUsed[val-1] = true
-
-			}
-
-			blkCnt++
-
-		} else {
-			blkCnt += int(val)
-		}
-
-		// terminate if block count exceeds bs^3
-		if blkCnt > bs3 {
-			return false
-		}
-
-	}
-
-	return true
-
-}
-
-// func GetDefaultBuildImage(depth int) (*bytes.Buffer, error) {
-
-// 	imgFile, err := os.Open("static/default_img.png")
-// 	if err != nil {
-// 		return nil, fmt.Errorf("in GetDefaultBuildImage:\n%w", err)
-// 	}
-// 	defer imgFile.Close()
-
-// 	srcImg, err := png.Decode(imgFile)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("in GetDefaultBuildImage:\n%w", err)
-// 	}
-
-// 	// Define the destination image
-// 	dstImg := image.NewRGBA(srcImg.Bounds())
-// 	xMax, yMax := srcImg.Bounds().Max.X, srcImg.Bounds().Max.Y
-// 	bgCol := color.RGBA{R: 0x18, G: 0x18, B: 0x1B, A: 0xFF}
-// 	for y := range yMax {
-// 		for x := range xMax {
-// 			dstImg.SetRGBA(x, y, bgCol)
-// 		}
-// 	}
-
-// 	// Draw the PNG onto the destination image
-// 	draw.Draw(dstImg, dstImg.Bounds(), srcImg, image.Point{}, draw.Over)
-
-// 	var buf bytes.Buffer
-// 	if err := png.Encode(&buf, dstImg); err != nil {
-// 		return nil, fmt.Errorf("in GetDefaultBuildImage:\n%w", err)
-// 	}
-
-// 	return &buf, nil
-
-// }

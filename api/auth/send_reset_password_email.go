@@ -1,8 +1,9 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
-	"log"
+	"errors"
 	"net/http"
 	"strings"
 	"trraformapi/utils"
@@ -40,12 +41,13 @@ func SendPasswordResetEmail(w http.ResponseWriter, r *http.Request) {
 	var user schemas.User
 	res := usersCollection.FindOne(ctx, bson.M{"email": requestData.Email})
 	err := res.Decode(&user)
-	if err == mongo.ErrNoDocuments { //doesn't exist, return
+	if errors.Is(err, mongo.ErrNoDocuments) { //doesn't exist, return
 		utils.MakeAPIResponse(w, r, http.StatusNotFound, nil, "User does not exist", true)
 		return
 	} else if err != nil {
-		log.Println(err)
-		utils.LogErrorDiscord("SendPasswordResetEmail", err, &requestData)
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("SendPasswordResetEmail", err, &requestData)
+		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
@@ -53,8 +55,9 @@ func SendPasswordResetEmail(w http.ResponseWriter, r *http.Request) {
 	// resend email
 	emailStatus, err := utils.SendResetPasswordEmail(ctx, requestData.Email)
 	if err != nil {
-		log.Println(err)
-		utils.LogErrorDiscord("SendPasswordResetEmail", err, &requestData)
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("SendPasswordResetEmail", err, &requestData)
+		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
