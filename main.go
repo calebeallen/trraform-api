@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"trraformapi/api/auth"
+	cronjobs "trraformapi/api/cron_jobs"
 	"trraformapi/api/plot"
 	"trraformapi/api/user"
 	"trraformapi/utils"
@@ -100,6 +101,9 @@ func main() {
 	// plot endpoints
 	router.Post("/plot/claim-with-credit", plot.ClaimWithCredit)
 	router.Post("/plot/update", plot.UpdatePlot)
+
+	// cron job endpoints
+	router.Post("/cronjobs/update-chunks", cronjobs.UpdateChunks)
 
 	fmt.Println("Server starting")
 	http.ListenAndServe(":8080", router)

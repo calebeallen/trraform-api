@@ -169,6 +169,14 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//TODO: flag chunk for update
+	err = plotutils.FlagPlotForUpdate(ctx, plotId)
+	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("UpdatePlot", err, &requestData)
+		}
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		return
+	}
 
 	utils.MakeAPIResponse(w, r, http.StatusOK, nil, "Success", false)
 
