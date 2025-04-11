@@ -30,11 +30,6 @@ func FlagPlotForUpdate(ctx context.Context, plotId *PlotId) error {
 
 }
 
-// decode parses the given byte slice with the format:
-//
-//	[4-byte body length][8-byte key][body]... repeated
-//
-// and returns a map of key -> body.
 func DecodeChunk(data []byte) (map[uint64][]byte, error) {
 
 	result := make(map[uint64][]byte)
@@ -72,8 +67,6 @@ func DecodeChunk(data []byte) (map[uint64][]byte, error) {
 
 }
 
-// encode does the reverse of decode: it takes a map of key -> body
-// and produces bytes in the order [4-byte body length][8-byte key][body].
 func EncodeChunk(m map[uint64][]byte) *bytes.Buffer {
 
 	var buf bytes.Buffer

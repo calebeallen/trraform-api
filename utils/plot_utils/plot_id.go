@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"trraformapi/utils"
+
+	"github.com/go-playground/validator/v10"
 )
 
 type PlotId struct {
@@ -31,6 +33,17 @@ func init() {
 		chunkMap[plotId] = chunkId
 
 	}
+
+	utils.Validate.RegisterValidation("plotid", func(fl validator.FieldLevel) bool {
+
+		plotId, err := PlotIdFromHexString(fl.Field().String())
+		if err != nil {
+			return false
+		}
+
+		return plotId.Validate()
+
+	})
 
 }
 

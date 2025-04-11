@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"trraformapi/utils"
 	plotutils "trraformapi/utils/plot_utils"
@@ -108,6 +109,37 @@ func ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
+	}
+
+	// remove plotId from available plots
+	depth := plotId.Depth()
+	err = utils.RedisCli.SRem(ctx, fmt.Sprintf("openplots:%d", depth), plotIdStr).Err()
+	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("ClaimWithCredit", err, &requestData)
+		}
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		return
+	}
+
+	// add plot's children (if it has any) to available plots
+	if depth < utils.MaxDepth {
+
+		childIds := make([]any, utils.SubplotCount)
+		for i := 0; i < utils.SubplotCount; i++ {
+			childId := plotutils.CreateSubplotId(plotId, uint64(i+1))
+			childIds[i] = childId.ToString()
+		}
+
+		err = utils.RedisCli.SAdd(ctx, fmt.Sprintf("openplots:%d", depth+1), childIds...).Err()
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				utils.LogErrorDiscord("ClaimWithCredit", err, &requestData)
+			}
+			utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+			return
+		}
+
 	}
 
 	utils.MakeAPIResponse(w, r, http.StatusOK, nil, "Success", false)

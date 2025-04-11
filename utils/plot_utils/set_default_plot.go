@@ -52,7 +52,10 @@ func SetDefaultPlot(ctx context.Context, plotId *PlotId, user *schemas.User) err
 		return fmt.Errorf("in SetDefaultPlotData:\n%w", err)
 	}
 
-	//TODO: flag chunk for update
+	err = FlagPlotForUpdate(ctx, plotId)
+	if err != nil {
+		return fmt.Errorf("in SetDefaultPlotData:\n%w", err)
+	}
 
 	return nil
 

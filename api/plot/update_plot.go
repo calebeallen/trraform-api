@@ -168,7 +168,7 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//TODO: flag chunk for update
+	// flag chunk for update
 	err = plotutils.FlagPlotForUpdate(ctx, plotId)
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {

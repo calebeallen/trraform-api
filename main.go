@@ -8,6 +8,7 @@ import (
 	"os"
 	"trraformapi/api/auth"
 	cronjobs "trraformapi/api/cron_jobs"
+	"trraformapi/api/leaderboard"
 	"trraformapi/api/plot"
 	"trraformapi/api/user"
 	"trraformapi/utils"
@@ -96,14 +97,21 @@ func main() {
 	router.Post("/auth/reset-password", auth.ResetPassword)
 
 	// user endpoints
-	router.Get("/user/data", user.GetUserData)
+	router.Get("/user", user.GetUserData)
+	router.Post("/user/change-username", user.ChangeUsername)
 
 	// plot endpoints
 	router.Post("/plot/claim-with-credit", plot.ClaimWithCredit)
 	router.Post("/plot/update", plot.UpdatePlot)
+	router.Get("/plot/open", plot.GetOpenPlot)
 
-	// cron job endpoints
-	router.Post("/cronjobs/update-chunks", cronjobs.UpdateChunks)
+	// leaderboard endpoints
+	router.Get("/leaderboard", leaderboard.GetLeaderboard)
+	router.Post("/leaderboard/vote", leaderboard.Vote)
+
+	// cron endpoints
+	router.Post("/cron-jobs/update-chunks", cronjobs.UpdateChunks)
+	router.Post("/cron-jobs/refresh-leaderboard", cronjobs.RefreshLeaderboard)
 
 	fmt.Println("Server starting")
 	http.ListenAndServe(":8080", router)
