@@ -43,6 +43,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/klauspost/compress v1.16.7 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/stripe/stripe-go/v82 v82.0.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.2 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
@@ -74,5 +75,6 @@ require (
 	github.com/go-chi/render v1.0.3
 	github.com/joho/godotenv v1.5.1
 	github.com/rivo/uniseg v0.4.7
+	github.com/stripe/stripe-go v70.15.0+incompatible
 	go.mongodb.org/mongo-driver v1.17.3
 )

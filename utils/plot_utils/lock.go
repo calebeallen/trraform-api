@@ -2,6 +2,7 @@ package plotutils
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 	"trraformapi/utils"
@@ -9,24 +10,50 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const LockDuration = 15 * time.Minute
+
 func LockPlot(ctx context.Context, plotId string, lockOwner string) (bool, error) {
 
-	// lock plot with 30 min deadlock prevention
-	key := fmt.Sprintf("lock:%s", plotId)
+	key := fmt.Sprintf("claimlock:%s", plotId)
 
-	lockAquired, err := utils.RedisCli.SetNX(ctx, key, lockOwner, time.Minute*30).Result()
+	// try to acquire lock
+	lockAcquired, err := utils.RedisCli.SetNX(ctx, key, lockOwner, LockDuration).Result()
 	if err != nil {
-		return false, fmt.Errorf("in LockPlot:\n%w", err)
+		return false, fmt.Errorf("in LockPlot (SetNX): %w", err)
 	}
 
-	return lockAquired, nil
+	if lockAcquired {
+		return true, nil
+	}
+
+	// if not aquired, check if lockOwner is the one who holds the lock. If so, refresh the lock.
+	currentOwner, err := utils.RedisCli.Get(ctx, key).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return false, nil
+		}
+		return false, fmt.Errorf("in LockPlot: %w", err)
+	}
+
+	if currentOwner == lockOwner {
+		// Refresh TTL since the same owner is extending it
+		ok, err := utils.RedisCli.Expire(ctx, key, LockDuration).Result()
+		if err != nil {
+			return false, fmt.Errorf("in LockPlot: %w", err)
+		}
+		return ok, nil
+
+	}
+
+	// otherwise, lock aquired by someone else.
+	return false, nil
 
 }
 
 func UnlockPlot(plotId string, lockOwner string) {
 
 	ctx := context.Background()
-	key := fmt.Sprintf("lock:%s", plotId)
+	key := fmt.Sprintf("claimlock:%s", plotId)
 
 	var unlockScript = redis.NewScript(`
 	if redis.call("get", KEYS[1]) == ARGV[1] then

@@ -14,15 +14,16 @@ type Offense struct {
 }
 
 type User struct {
-	Id            bson.ObjectID `bson:"_id,omitempty"`
-	Ctime         time.Time     `bson:"ctime"`
-	Username      string        `bson:"username"`
-	Email         string        `bson:"email"`
-	EmailVerified bool          `bson:"emailVerified"`
-	PassHash      string        `bson:"passHash"`
-	GoogleId      string        `bson:"googleId"`
-	Subscribed    bool          `bson:"subscribed"`
-	PlotCredits   int           `bson:"plotCredits"`
-	PlotIds       []string      `bson:"plotIds"`
-	Offenses      []Offense     `bson:"offenses"`
+	Id             bson.ObjectID `bson:"_id,omitempty"`
+	Ctime          time.Time     `bson:"ctime"`
+	Username       string        `bson:"username"`
+	Email          string        `bson:"email"`
+	EmailVerified  bool          `bson:"emailVerified"`
+	PassHash       string        `bson:"passHash"`
+	GoogleId       string        `bson:"googleId"`
+	StripeCustomer string        `bson:"stripeCustomer"`
+	Subscribed     bool          `bson:"subscribed"`
+	PlotCredits    int           `bson:"plotCredits"`
+	PlotIds        []string      `bson:"plotIds"`
+	Offenses       []Offense     `bson:"offenses"`
 }

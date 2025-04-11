@@ -51,7 +51,7 @@ func PasswordLogIn(w http.ResponseWriter, r *http.Request) {
 	// find user
 	var user schemas.User
 	err := usersCollection.FindOne(ctx, bson.M{"email": strings.ToLower(requestData.Email)}).Decode(&user)
-	if errors.Is(err, mongo.ErrNoDocuments) { //doesn't exist, return
+	if errors.Is(err, mongo.ErrNoDocuments) || user.PassHash == "" { //doesn't exist, return
 		utils.MakeAPIResponse(w, r, http.StatusNotFound, &responseData, "User does not exist", true)
 		return
 	} else if err != nil {

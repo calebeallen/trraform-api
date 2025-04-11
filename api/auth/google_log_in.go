@@ -11,6 +11,8 @@ import (
 	"trraformapi/utils"
 	"trraformapi/utils/schemas"
 
+	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/customer"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"google.golang.org/api/idtoken"
@@ -22,6 +24,10 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 
 	var requestData struct {
 		Token string `json:"token" validate:"required"` //google token
+	}
+
+	var responseData struct {
+		Token string `json:"token"`
 	}
 
 	// validate request body
@@ -45,6 +51,7 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 	// username required to be unique when creating account from front end, but it doesn't really matter.
 	googleId := payload.Claims["sub"].(string)
 	email := payload.Claims["email"].(string)
+	email = strings.ToLower(email)
 	username := strings.Split(email, "@")[0]
 	if len(username) > 32 {
 		username = username[:32]
@@ -53,24 +60,42 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 	usersCollection := utils.MongoDB.Collection("users")
 
 	// find user
-	var user *schemas.User
-	res := usersCollection.FindOne(ctx, bson.M{"googleId": googleId})
-	err = res.Decode(&user)
+	// if user used their email to create an account with a password, then logged in with that gmail via google, retrieve the existing account.
+	var user schemas.User
+	err = usersCollection.FindOne(ctx, bson.M{
+		"$or": bson.M{
+			"googleId": googleId,
+			"email":    email,
+		},
+	}).Decode(&user)
 
 	// create new user if not found
 	if errors.Is(err, mongo.ErrNoDocuments) {
 
-		user = &schemas.User{
-			Id:          bson.NewObjectID(),
-			Ctime:       time.Now().UTC(),
-			Username:    username,
-			GoogleId:    googleId,
-			PlotCredits: 2,
-			PlotIds:     []string{},
-			Offenses:    []schemas.Offense{},
+		// create new stripe customer
+		params := stripe.CustomerParams{
+			Email: stripe.String(email),
+		}
+		stripeCustomer, err := customer.New(&params)
+		if err != nil {
+			utils.LogErrorDiscord("GoogleLogIn", err, &requestData)
+			utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+			return
 		}
 
-		if _, err := usersCollection.InsertOne(ctx, user); err != nil {
+		user = schemas.User{
+			Id:             bson.NewObjectID(),
+			Ctime:          time.Now().UTC(),
+			Username:       username,
+			GoogleId:       googleId,
+			Email:          email,
+			StripeCustomer: stripeCustomer.ID,
+			PlotCredits:    2,
+			PlotIds:        []string{},
+			Offenses:       []schemas.Offense{},
+		}
+
+		if _, err := usersCollection.InsertOne(ctx, &user); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				utils.LogErrorDiscord("GoogleLogIn", err, &requestData)
 			}
@@ -94,9 +119,7 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
-	responseData := struct {
-		Token string `json:"token"`
-	}{Token: authTokenStr}
+	responseData.Token = authTokenStr
 
 	utils.MakeAPIResponse(w, r, http.StatusOK, &responseData, "Success", false)
 

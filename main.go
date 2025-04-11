@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+	"github.com/stripe/stripe-go/v82"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
@@ -78,6 +79,9 @@ func main() {
 
 	router := chi.NewRouter()
 
+	// init stripe
+	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
+
 	// Middleware
 	router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:5173"},
@@ -104,6 +108,7 @@ func main() {
 	router.Post("/plot/claim-with-credit", plot.ClaimWithCredit)
 	router.Post("/plot/update", plot.UpdatePlot)
 	router.Get("/plot/open", plot.GetOpenPlot)
+	router.Post("/plot/init-paid-claim", plot.InitPaidClaim)
 
 	// leaderboard endpoints
 	router.Get("/leaderboard", leaderboard.GetLeaderboard)

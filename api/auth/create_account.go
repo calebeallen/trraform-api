@@ -10,6 +10,8 @@ import (
 	"trraformapi/utils"
 	"trraformapi/utils/schemas"
 
+	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/customer"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -74,7 +76,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// if username and/or email taken return
+	// if username and/or email taken, return
 	if len(users) != 0 {
 
 		var exist struct {
@@ -99,15 +101,27 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 	}
 
+	// create new stripe customer
+	params := stripe.CustomerParams{
+		Email: stripe.String(requestData.Email),
+	}
+	customer, err := customer.New(&params)
+	if err != nil {
+		utils.LogErrorDiscord("CreateAccount", err, &requestData)
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		return
+	}
+
 	// create default entry in mongo
 	newUser := &schemas.User{
-		Ctime:       time.Now().UTC(),
-		Username:    requestData.Username,
-		Email:       requestData.Email,
-		PassHash:    string(passHash),
-		PlotCredits: 2,
-		PlotIds:     []string{},
-		Offenses:    []schemas.Offense{},
+		Ctime:          time.Now().UTC(),
+		Username:       requestData.Username,
+		Email:          requestData.Email,
+		PassHash:       string(passHash),
+		StripeCustomer: customer.ID,
+		PlotCredits:    2,
+		PlotIds:        []string{},
+		Offenses:       []schemas.Offense{},
 	}
 
 	if _, err := usersCollection.InsertOne(ctx, newUser); err != nil {

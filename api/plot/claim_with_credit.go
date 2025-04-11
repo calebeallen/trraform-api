@@ -27,7 +27,7 @@ func ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 	uid, _ := authToken.GetUidObjectId()
 
 	var requestData struct {
-		PlotId string `json:"plotId" validate:"required"`
+		PlotId string `json:"plotId" validate:"required,plotid"`
 	}
 
 	// validate request body
@@ -41,12 +41,7 @@ func ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// validate plot id
-	plotId, err := plotutils.PlotIdFromHexString(requestData.PlotId)
-	if err != nil || !plotId.Validate() {
-		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
-		return
-	}
+	plotId, _ := plotutils.PlotIdFromHexString(requestData.PlotId)
 	plotIdStr := plotId.ToString()
 	uidString := uid.Hex()
 
