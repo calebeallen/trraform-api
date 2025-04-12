@@ -149,7 +149,7 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// upload plot data
-	err = utils.PutObjectR2("plots", plotIdStr+".dat", bytes.NewReader(plotDataBytes), "application/octet-stream", ctx)
+	err = utils.PutObjectR2(ctx, "plots", plotIdStr+".dat", bytes.NewReader(plotDataBytes), "application/octet-stream")
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
 			utils.LogErrorDiscord("UpdatePlot", err, &requestData)
@@ -159,7 +159,7 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// upload plot image
-	err = utils.PutObjectR2("images", plotIdStr+".png", imageData, "image/png", ctx)
+	err = utils.PutObjectR2(ctx, "images", plotIdStr+".png", imageData, "image/png")
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
 			utils.LogErrorDiscord("UpdatePlot", err, &requestData)

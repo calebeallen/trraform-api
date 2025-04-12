@@ -63,7 +63,15 @@ func ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// verify that plot isn't claimed
-	if utils.HasObjectR2("plots", plotIdStr+".dat", ctx) {
+	claimed, err := utils.HasObjectR2(ctx, "plots", plotIdStr+".dat")
+	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			utils.LogErrorDiscord("ClaimWithCredit", err, &requestData)
+		}
+		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		return
+	}
+	if claimed {
 		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Plot already claimed", true)
 		return
 	}
@@ -72,10 +80,12 @@ func ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 
 	// add plot id to user's list, decrement plotCredits
 	// this requires that the user has more than 0 credits left
+	// also check that plotId is not already in their list of ids. Could lead to duplicate entry for user.
 	res := usersCollection.FindOneAndUpdate(ctx,
 		bson.M{
 			"_id":         uid,
 			"plotCredits": bson.M{"$gt": 0},
+			"plotIds":     bson.M{"$ne": plotIdStr},
 		},
 		bson.M{
 			"$inc":  bson.M{"plotCredits": -1},
@@ -121,7 +131,7 @@ func ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 	if depth < utils.MaxDepth {
 
 		childIds := make([]any, utils.SubplotCount)
-		for i := 0; i < utils.SubplotCount; i++ {
+		for i := range utils.SubplotCount {
 			childId := plotutils.CreateSubplotId(plotId, uint64(i+1))
 			childIds[i] = childId.ToString()
 		}

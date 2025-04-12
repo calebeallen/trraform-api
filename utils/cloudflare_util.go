@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/joho/godotenv"
 )
 
@@ -45,10 +47,10 @@ func init() {
 
 }
 
-func HasObjectR2(bucket string, key string, ctx context.Context) bool {
+func HasObjectR2(ctx context.Context, bucket, key string) (bool, error) {
 
 	if s3Client == nil {
-		return false
+		return false, fmt.Errorf("in HasObjectR2:\ncould not init s3Client")
 	}
 
 	_, err := s3Client.HeadObject(ctx, &s3.HeadObjectInput{
@@ -56,11 +58,18 @@ func HasObjectR2(bucket string, key string, ctx context.Context) bool {
 		Key:    &key,
 	})
 
-	return err == nil
+	var notFound *types.NotFound
+	if errors.As(err, &notFound) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("in HasObjectR2: %w", err)
+	}
+
+	return true, nil
 
 }
 
-func PutObjectR2(bucket string, key string, body io.Reader, contentType string, ctx context.Context) error {
+func PutObjectR2(ctx context.Context, bucket string, key string, body io.Reader, contentType string) error {
 
 	if s3Client == nil {
 		return fmt.Errorf("in PutObjectR2:\ncould not init s3Client")
@@ -80,7 +89,7 @@ func PutObjectR2(bucket string, key string, body io.Reader, contentType string, 
 
 }
 
-func GetObjectR2(bucket string, key string, ctx context.Context) ([]byte, error) {
+func GetObjectR2(ctx context.Context, bucket string, key string) ([]byte, error) {
 
 	if s3Client == nil {
 		return nil, fmt.Errorf("could not init s3Client")
@@ -104,7 +113,7 @@ func GetObjectR2(bucket string, key string, ctx context.Context) ([]byte, error)
 
 }
 
-func PurgeCacheCDN(urls []string, ctx context.Context) error {
+func PurgeCacheCDN(ctx context.Context, urls []string) error {
 
 	type Headers struct {
 		Origin string `json:"Origin"`

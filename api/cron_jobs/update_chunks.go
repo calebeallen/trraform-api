@@ -32,7 +32,7 @@ func UpdateChunks(w http.ResponseWriter, r *http.Request) {
 
 		// pull chunk from r2, decode into chunk map
 		var chunk map[uint64][]byte
-		chunkBytes, err := utils.GetObjectR2("chunks", chunkId+".dat", ctx)
+		chunkBytes, err := utils.GetObjectR2(ctx, "chunks", chunkId+".dat")
 		var noSuchKey *types.NoSuchKey
 		if err != nil && errors.As(err, &noSuchKey) {
 			chunk = make(map[uint64][]byte)
@@ -63,7 +63,7 @@ func UpdateChunks(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			plotDataBytes, err := utils.GetObjectR2("plots", plotId.ToString()+".dat", ctx)
+			plotDataBytes, err := utils.GetObjectR2(ctx, "plots", plotId.ToString()+".dat")
 			if err != nil {
 				utils.LogErrorDiscord("UpdateChunks", err, nil)
 				continue
@@ -75,7 +75,7 @@ func UpdateChunks(w http.ResponseWriter, r *http.Request) {
 
 		// encode chunk and upload it
 		newChunkBuf := plotutils.EncodeChunk(chunk)
-		err = utils.PutObjectR2("chunks", chunkId+".dat", newChunkBuf, "application/octet-stream", ctx)
+		err = utils.PutObjectR2(ctx, "chunks", chunkId+".dat", newChunkBuf, "application/octet-stream")
 		if err != nil {
 			utils.LogErrorDiscord("UpdateChunks", err, nil)
 			continue

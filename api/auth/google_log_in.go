@@ -63,9 +63,9 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 	// if user used their email to create an account with a password, then logged in with that gmail via google, retrieve the existing account.
 	var user schemas.User
 	err = usersCollection.FindOne(ctx, bson.M{
-		"$or": bson.M{
-			"googleId": googleId,
-			"email":    email,
+		"$or": bson.A{
+			bson.M{"googleId": googleId},
+			bson.M{"email": email},
 		},
 	}).Decode(&user)
 

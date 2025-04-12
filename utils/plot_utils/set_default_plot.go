@@ -35,7 +35,7 @@ func SetDefaultPlot(ctx context.Context, plotId *PlotId, user *schemas.User) err
 	}
 
 	// upload plot data
-	err = utils.PutObjectR2("plots", plotIdStr+".dat", bytes.NewReader(plotDataBytes), "application/octet-stream", ctx)
+	err = utils.PutObjectR2(ctx, "plots", plotIdStr+".dat", bytes.NewReader(plotDataBytes), "application/octet-stream")
 	if err != nil {
 		return fmt.Errorf("in SetDefaultPlotData:\n%w", err)
 	}
@@ -47,7 +47,7 @@ func SetDefaultPlot(ctx context.Context, plotId *PlotId, user *schemas.User) err
 	}
 
 	// upload default image
-	err = utils.PutObjectR2("images", plotIdStr+".png", bytes.NewReader(imageData), "image/png", ctx)
+	err = utils.PutObjectR2(ctx, "images", plotIdStr+".png", bytes.NewReader(imageData), "image/png")
 	if err != nil {
 		return fmt.Errorf("in SetDefaultPlotData:\n%w", err)
 	}

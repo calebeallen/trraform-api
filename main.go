@@ -9,6 +9,7 @@ import (
 	"trraformapi/api/auth"
 	cronjobs "trraformapi/api/cron_jobs"
 	"trraformapi/api/leaderboard"
+	"trraformapi/api/payment"
 	"trraformapi/api/plot"
 	"trraformapi/api/user"
 	"trraformapi/utils"
@@ -108,7 +109,6 @@ func main() {
 	router.Post("/plot/claim-with-credit", plot.ClaimWithCredit)
 	router.Post("/plot/update", plot.UpdatePlot)
 	router.Get("/plot/open", plot.GetOpenPlot)
-	router.Post("/plot/init-paid-claim", plot.InitPaidClaim)
 
 	// leaderboard endpoints
 	router.Get("/leaderboard", leaderboard.GetLeaderboard)
@@ -117,6 +117,9 @@ func main() {
 	// cron endpoints
 	router.Post("/cron-jobs/update-chunks", cronjobs.UpdateChunks)
 	router.Post("/cron-jobs/refresh-leaderboard", cronjobs.RefreshLeaderboard)
+
+	// payment endpoints
+	router.Post("/payment/create-intent", payment.CreatePaymentIntent)
 
 	fmt.Println("Server starting")
 	http.ListenAndServe(":8080", router)
