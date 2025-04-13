@@ -113,6 +113,6 @@ func UpdateChunks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.MakeAPIResponse(w, r, http.StatusOK, nil, "Success", true)
+	utils.MakeAPIResponse(w, r, http.StatusOK, nil, "Success", false)
 
 }

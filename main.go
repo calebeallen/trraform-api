@@ -120,6 +120,7 @@ func main() {
 
 	// payment endpoints
 	router.Post("/payment/create-intent", payment.CreatePaymentIntent)
+	router.Post("/payment/stripe-webhook", payment.StripeWebhook)
 
 	fmt.Println("Server starting")
 	http.ListenAndServe(":8080", router)
