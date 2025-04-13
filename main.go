@@ -119,7 +119,9 @@ func main() {
 	router.Post("/cron-jobs/refresh-leaderboard", cronjobs.RefreshLeaderboard)
 
 	// payment endpoints
-	router.Post("/payment/create-intent", payment.CreatePaymentIntent)
+	router.Get("/payment/intent/details", payment.GetPaymentIntentDetails)
+	router.Post("/payment/intent", payment.CreatePaymentIntent)
+	router.Post("/payment/subscription/create", payment.CreateSubscription)
 	router.Post("/payment/stripe-webhook", payment.StripeWebhook)
 
 	fmt.Println("Server starting")

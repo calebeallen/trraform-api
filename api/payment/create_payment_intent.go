@@ -114,6 +114,7 @@ func CreatePaymentIntent(w http.ResponseWriter, r *http.Request) {
 		Amount:   stripe.Int64(total),
 		Currency: stripe.String(string(stripe.CurrencyUSD)),
 	}
+	params.AddMetadata("type", "pay")
 	params.AddMetadata("uid", uidString)
 
 	// add plots to metadata
