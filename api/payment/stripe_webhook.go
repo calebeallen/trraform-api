@@ -74,6 +74,54 @@ func StripeWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+	case "customer.subscription.updated":
+
+		var subscription stripe.Subscription
+		if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
+			utils.LogErrorDiscord("StripeWebhook", err, nil)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if subscription.Status == "active" {
+			err := handleSubscribe(ctx, &subscription)
+			if err != nil {
+				utils.LogErrorDiscord("StripeWebhook", err, nil)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+
+	case "invoice.paid": // listen for monthly renewal
+
+		var invoice stripe.Invoice
+		if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
+			utils.LogErrorDiscord("StripeWebhook", err, nil)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if err := handleRenew(ctx, &invoice); err != nil {
+			utils.LogErrorDiscord("StripeWebhook", err, nil)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+	case "customer.subscription.deleted": // listen for cancelation
+
+		var subscription stripe.Subscription
+		if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
+			utils.LogErrorDiscord("StripeWebhook", err, nil)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		err := handleUnsubscribe(ctx, &subscription)
+		if err != nil {
+			utils.LogErrorDiscord("StripeWebhook", err, nil)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
 	default:
 		utils.LogErrorDiscord("StripeWebhook", errors.New("unhandled event type"), nil)
 	}
@@ -233,5 +281,110 @@ func handlePaymentFailed(paymentIntent *stripe.PaymentIntent) error {
 
 	// clear locks
 	return plotutils.UnlockMany(plotIds, uid)
+
+}
+
+func handleSubscribe(ctx context.Context, sub *stripe.Subscription) error {
+
+	usersCollection := utils.MongoDB.Collection("users")
+
+	// update user in mongo
+	var user schemas.User
+	err := usersCollection.FindOneAndUpdate(ctx, bson.M{
+		"stripeCustomer": sub.Customer.ID,
+	}, bson.M{
+		"$set": bson.M{
+			"subscription.isActive":       true,
+			"subscription.productId":      "prod_S7k4E96oClYk9l",
+			"subscription.subscriptionId": sub.ID,
+		},
+	}).Decode(&user)
+	if err != nil {
+		return fmt.Errorf("in handleSubscribe, SEVERE ERROR updating user by customer id failed:\n%w", err)
+	}
+
+	// flag user's plots for update so that subscriber benefits show
+	for _, id := range user.PlotIds {
+		plotId, _ := plotutils.PlotIdFromHexString(id)
+		err := plotutils.FlagPlotForUpdate(ctx, plotId)
+		if err != nil {
+			utils.LogErrorDiscord("StripeWebhook", fmt.Errorf("in handleSubscribe error flaging plot for update:\n%w", err), nil)
+		}
+	}
+
+	return nil
+
+}
+
+func handleRenew(ctx context.Context, invoice *stripe.Invoice) error {
+
+	usersCollection := utils.MongoDB.Collection("users")
+
+	// give a bonus plot credit if user is within their first 6 payment cycles
+	_, err := usersCollection.UpdateOne(
+		ctx,
+		bson.M{
+			"stripeCustomer":             invoice.Customer.ID,
+			"subscription.recurredCount": bson.M{"$lt": 6},
+		},
+		bson.M{
+			"$inc": bson.M{
+				"plotCredits": 1, // bonus credit
+			},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to award bonus plot credit: %w", err)
+	}
+
+	// increment the recurredCount by 1 for every renewal
+	_, err = usersCollection.UpdateOne(
+		ctx,
+		bson.M{
+			"stripeCustomer": invoice.Customer.ID,
+		},
+		bson.M{
+			"$inc": bson.M{
+				"subscription.recurredCount": 1,
+			},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to increment subscription.recurredCount: %w", err)
+	}
+
+	return nil
+
+}
+
+func handleUnsubscribe(ctx context.Context, sub *stripe.Subscription) error {
+
+	usersCollection := utils.MongoDB.Collection("users")
+
+	// update user in mongo
+	var user schemas.User
+	err := usersCollection.FindOneAndUpdate(ctx, bson.M{
+		"stripeCustomer": sub.Customer.ID,
+	}, bson.M{
+		"$set": bson.M{
+			"subscription.isActive":       false,
+			"subscription.productId":      "",
+			"subscription.subscriptionId": "",
+		},
+	}).Decode(&user)
+	if err != nil {
+		return fmt.Errorf("in handleSubscribe, SEVERE ERROR updating user by customer id failed:\n%w", err)
+	}
+
+	// flag user's plots for update so that subscriber benefits are removed
+	for _, id := range user.PlotIds {
+		plotId, _ := plotutils.PlotIdFromHexString(id)
+		err := plotutils.FlagPlotForUpdate(ctx, plotId)
+		if err != nil {
+			utils.LogErrorDiscord("StripeWebhook", fmt.Errorf("in handleSubscribe error flaging plot for update:\n%w", err), nil)
+		}
+	}
+
+	return nil
 
 }

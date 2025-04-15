@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"sync"
 	"trraformapi/utils"
 	plotutils "trraformapi/utils/plot_utils"
 
@@ -25,72 +27,113 @@ func UpdateChunks(w http.ResponseWriter, r *http.Request) {
 
 	//for each chunk, get the plot ids that need update
 	//pull the chunk from r2
-	//get
+	const concurrencyLimit = 10
+	sem := make(chan struct{}, concurrencyLimit)
+
+	var wg sync.WaitGroup
+	var updatedIdsMu sync.Mutex
 	var updatedChunkIds []string
 
-	for _, chunkId := range needsUpdate {
+	for _, _chunkId := range needsUpdate {
 
-		// pull chunk from r2, decode into chunk map
-		var chunk map[uint64][]byte
-		chunkBytes, err := utils.GetObjectR2(ctx, "chunks", chunkId+".dat")
-		var noSuchKey *types.NoSuchKey
-		if err != nil && errors.As(err, &noSuchKey) {
-			chunk = make(map[uint64][]byte)
-		} else if err != nil {
-			utils.LogErrorDiscord("UpdateChunks", err, nil)
-			continue
-		} else {
-			chunk, err = plotutils.DecodeChunk(chunkBytes)
-			if err != nil {
+		sem <- struct{}{}
+		wg.Add(1)
+
+		go func(chunkId string) {
+
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			// pull chunk from r2, decode into chunk map
+			var chunk map[uint64][]byte
+			chunkBytes, _, err := utils.GetObjectR2(ctx, "chunks", chunkId+".dat")
+			var noSuchKey *types.NoSuchKey
+			if err != nil && errors.As(err, &noSuchKey) {
+				chunk = make(map[uint64][]byte)
+			} else if err != nil {
 				utils.LogErrorDiscord("UpdateChunks", err, nil)
-				continue
-			}
-		}
-
-		// get plot ids that need update
-		plotIds, err := utils.RedisCli.SMembers(ctx, fmt.Sprintf("updatechunk:%s", chunkId)).Result()
-		if err != nil {
-			utils.LogErrorDiscord("UpdateChunks", err, nil)
-			continue
-		}
-
-		// for each plot, pull it's data from plots bucket and set it in the chunk map
-		for _, plotIdStr := range plotIds {
-
-			plotId, err := plotutils.PlotIdFromHexString(plotIdStr)
-			if err != nil {
-				utils.LogErrorDiscord("UpdateChunks", err, nil)
-				continue
+				return
+			} else {
+				chunk, err = plotutils.DecodeChunk(chunkBytes)
+				if err != nil {
+					utils.LogErrorDiscord("UpdateChunks", err, nil)
+					return
+				}
 			}
 
-			plotDataBytes, err := utils.GetObjectR2(ctx, "plots", plotId.ToString()+".dat")
+			// get plot ids that need update
+			plotIds, err := utils.RedisCli.SMembers(ctx, fmt.Sprintf("updatechunk:%s", chunkId)).Result()
 			if err != nil {
 				utils.LogErrorDiscord("UpdateChunks", err, nil)
-				continue
+				return
 			}
 
-			chunk[plotId.Id] = plotDataBytes
+			// for each plot, pull it's data from plots bucket and set it in the chunk map
+			for _, plotIdStr := range plotIds {
 
-		}
+				plotId, err := plotutils.PlotIdFromHexString(plotIdStr)
+				if err != nil {
+					utils.LogErrorDiscord("UpdateChunks", err, nil)
+					continue
+				}
 
-		// encode chunk and upload it
-		newChunkBuf := plotutils.EncodeChunk(chunk)
-		err = utils.PutObjectR2(ctx, "chunks", chunkId+".dat", newChunkBuf, "application/octet-stream")
-		if err != nil {
-			utils.LogErrorDiscord("UpdateChunks", err, nil)
-			continue
-		}
+				plotDataBytes, metadata, err := utils.GetObjectR2(ctx, "plots", plotId.ToString()+".dat")
+				if err != nil {
+					utils.LogErrorDiscord("UpdateChunks", err, nil)
+					continue
+				}
 
-		// delete plot id set for chunk
-		_, err = utils.RedisCli.Del(ctx, fmt.Sprintf("updatechunk:%s", chunkId)).Result()
-		if err != nil {
-			utils.LogErrorDiscord("UpdateChunks", err, nil)
-			continue
-		}
+				isVerified := false
+				val, ok := metadata["verified"]
+				if ok {
+					isVerified, err = strconv.ParseBool(val)
+					if err != nil {
+						isVerified = false
+					}
+				}
 
-		updatedChunkIds = append(updatedChunkIds, chunkId)
+				//update verified status
+				plotData, err := plotutils.Decode(plotDataBytes)
+				if err != nil {
+					utils.LogErrorDiscord("UpdateChunks", err, nil)
+					continue
+				}
+				plotData.Verified = isVerified
+				plotDataBytes, err = plotData.Encode()
+				if err != nil {
+					utils.LogErrorDiscord("UpdateChunks", err, nil)
+					continue
+				}
+
+				chunk[plotId.Id] = plotDataBytes
+
+			}
+
+			// encode chunk and upload it
+			newChunkBuf := plotutils.EncodeChunk(chunk)
+			err = utils.PutObjectR2(ctx, "chunks", chunkId+".dat", newChunkBuf, "application/octet-stream", nil)
+			if err != nil {
+				utils.LogErrorDiscord("UpdateChunks", err, nil)
+				return
+			}
+
+			// delete plot id set for chunk
+			_, err = utils.RedisCli.Del(ctx, fmt.Sprintf("updatechunk:%s", chunkId)).Result()
+			if err != nil {
+				utils.LogErrorDiscord("UpdateChunks", err, nil)
+				return
+			}
+
+			// Synchronized append to updatedChunkIds
+			updatedIdsMu.Lock()
+			updatedChunkIds = append(updatedChunkIds, chunkId)
+			updatedIdsMu.Unlock()
+
+		}(_chunkId)
 
 	}
+
+	wg.Wait()
 
 	if len(updatedChunkIds) < len(needsUpdate) {
 

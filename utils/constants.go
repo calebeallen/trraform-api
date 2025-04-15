@@ -9,6 +9,7 @@ const (
 	ChunkSize      = 6
 	BuildSizeStd   = 40
 	BuildSizeLarge = 90
+	MinBuildSize   = 6
 )
 
 var Price []int64 = []int64{499, 399, 299}

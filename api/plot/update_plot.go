@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"trraformapi/utils"
 	plotutils "trraformapi/utils/plot_utils"
 	"trraformapi/utils/schemas"
@@ -86,13 +87,12 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// create plot data
+	// create plot data (don't set verified status here)
 	plotData := plotutils.PlotData{
 		Name:        requestData.Name,
 		Description: requestData.Description,
 		Link:        requestData.Link,
 		LinkTitle:   requestData.LinkTitle,
-		Verified:    user.Subscribed,
 		Owner:       user.Username,
 		BuildData:   buildData,
 	}
@@ -106,7 +106,7 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 	// check that plot is within build size constraints for subscription status
 	// link and large build size only allowed for subscribed users
 	buildSize := buildData[1]
-	if buildSize > utils.BuildSizeLarge || (!user.Subscribed && (plotData.Link != "" || plotData.LinkTitle != "" || buildSize > utils.BuildSizeStd)) {
+	if buildSize < utils.MinBuildSize || buildSize > utils.BuildSizeLarge || (!user.Subscription.IsActive && (plotData.Link != "" || plotData.LinkTitle != "" || buildSize > utils.BuildSizeStd)) {
 		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Plot data has unauthorized attributes", true)
 		return
 	}
@@ -148,8 +148,11 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 
 	}
 
+	// set verified status in metadata so it can be changed easily
+	metadata := map[string]string{"verified": strconv.FormatBool(user.Subscription.IsActive)}
+
 	// upload plot data
-	err = utils.PutObjectR2(ctx, "plots", plotIdStr+".dat", bytes.NewReader(plotDataBytes), "application/octet-stream")
+	err = utils.PutObjectR2(ctx, "plots", plotIdStr+".dat", bytes.NewReader(plotDataBytes), "application/octet-stream", metadata)
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
 			utils.LogErrorDiscord("UpdatePlot", err, &requestData)
@@ -159,7 +162,7 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// upload plot image
-	err = utils.PutObjectR2(ctx, "images", plotIdStr+".png", imageData, "image/png")
+	err = utils.PutObjectR2(ctx, "images", plotIdStr+".png", imageData, "image/png", nil)
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
 			utils.LogErrorDiscord("UpdatePlot", err, &requestData)

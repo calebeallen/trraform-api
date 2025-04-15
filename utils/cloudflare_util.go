@@ -69,7 +69,7 @@ func HasObjectR2(ctx context.Context, bucket, key string) (bool, error) {
 
 }
 
-func PutObjectR2(ctx context.Context, bucket string, key string, body io.Reader, contentType string) error {
+func PutObjectR2(ctx context.Context, bucket string, key string, body io.Reader, contentType string, metadata map[string]string) error {
 
 	if s3Client == nil {
 		return fmt.Errorf("in PutObjectR2:\ncould not init s3Client")
@@ -80,6 +80,7 @@ func PutObjectR2(ctx context.Context, bucket string, key string, body io.Reader,
 		Key:         &key,
 		Body:        body,
 		ContentType: aws.String(contentType),
+		Metadata:    metadata,
 	})
 	if err != nil {
 		return fmt.Errorf("in PutObjectR2:\n%w", err)
@@ -89,10 +90,31 @@ func PutObjectR2(ctx context.Context, bucket string, key string, body io.Reader,
 
 }
 
-func GetObjectR2(ctx context.Context, bucket string, key string) ([]byte, error) {
+func UpdateMetadataR2(ctx context.Context, bucket string, key string, metadata map[string]string) error {
 
 	if s3Client == nil {
-		return nil, fmt.Errorf("could not init s3Client")
+		return fmt.Errorf("in PutObjectR2:\ncould not init s3Client")
+	}
+
+	_, err := s3Client.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:            aws.String(bucket),
+		CopySource:        aws.String(bucket + "/" + key),
+		Key:               aws.String(key),
+		Metadata:          metadata,
+		MetadataDirective: types.MetadataDirectiveReplace, // IMPORTANT
+	})
+	if err != nil {
+		return fmt.Errorf("in UpdateMetadataR2:\n%w", err)
+	}
+
+	return nil
+
+}
+
+func GetObjectR2(ctx context.Context, bucket string, key string) ([]byte, map[string]string, error) {
+
+	if s3Client == nil {
+		return nil, nil, fmt.Errorf("could not init s3Client")
 	}
 
 	result, err := s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
@@ -100,16 +122,16 @@ func GetObjectR2(ctx context.Context, bucket string, key string) ([]byte, error)
 		Key:    &key,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("in GetObjectR2:\n%w", err)
+		return nil, nil, fmt.Errorf("in GetObjectR2:\n%w", err)
 	}
 	defer result.Body.Close()
 
 	data, err := io.ReadAll(result.Body)
 	if err != nil {
-		return nil, fmt.Errorf("in GetObjectR2:\n%w", err)
+		return nil, nil, fmt.Errorf("in GetObjectR2:\n%w", err)
 	}
 
-	return data, nil
+	return data, result.Metadata, nil
 
 }
 

@@ -21,6 +21,16 @@ type PlotData struct {
 	BuildData   []uint16 `validate:"builddata"`
 }
 
+type plotDataJsonPart struct {
+	Version     int    `json:"ver"`
+	Name        string `json:"name"`
+	Description string `json:"desc"`
+	Link        string `json:"link"`
+	LinkTitle   string `json:"linkTitle"`
+	Owner       string `json:"owner"`
+	Verified    bool   `json:"verified"`
+}
+
 func init() {
 
 	utils.Validate.RegisterValidation("maxgraphemes", func(fl validator.FieldLevel) bool {
@@ -116,23 +126,70 @@ func init() {
 
 }
 
+func Decode(data []byte) (*PlotData, error) {
+
+	var parts [][]byte
+	buf := data
+
+	for len(buf) > 0 {
+
+		//first 4 bytes give the length of the data
+		if len(data) < 4 {
+			return nil, fmt.Errorf("in splitPlotDataParts: invalid prefix")
+		}
+
+		// read length (little-endian)
+		partLen := binary.LittleEndian.Uint32(buf[:4])
+		buf = buf[4:]
+
+		if uint32(len(buf)) < partLen {
+			return nil, fmt.Errorf("in splitPlotDataParts: invalid part")
+		}
+
+		chunk := buf[:partLen]
+		parts = append(parts, chunk)
+		buf = buf[partLen:]
+
+	}
+
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid plot data")
+	}
+
+	var jsonData plotDataJsonPart
+	err := json.Unmarshal(parts[0], &jsonData)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding json part")
+	}
+
+	buildData, err := utils.BytesToUint16Arr(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("error decoding build data")
+	}
+
+	plotData := PlotData{
+		Name:        jsonData.Name,
+		Description: jsonData.Description,
+		Link:        jsonData.Link,
+		LinkTitle:   jsonData.LinkTitle,
+		Verified:    jsonData.Verified,
+		Owner:       jsonData.Owner,
+		BuildData:   buildData,
+	}
+
+	return &plotData, nil
+
+}
+
 func (plotData *PlotData) Encode() ([]byte, error) {
 
-	jsonData := struct {
-		Version     int    `json:"ver"`
-		Name        string `json:"name"`
-		Description string `json:"desc"`
-		Link        string `json:"link"`
-		LinkTitle   string `json:"linkTitle"`
-		Onwer       string `json:"owner"`
-		Verified    bool   `json:"verified"`
-	}{
+	jsonData := plotDataJsonPart{
 		Version:     0,
 		Name:        plotData.Name,
 		Description: plotData.Description,
 		Link:        plotData.Link,
 		LinkTitle:   plotData.LinkTitle,
-		Onwer:       plotData.Owner,
+		Owner:       plotData.Owner,
 		Verified:    plotData.Verified,
 	}
 
@@ -160,33 +217,3 @@ func (plotData *PlotData) Encode() ([]byte, error) {
 	return data, nil
 
 }
-
-// func splitPlotDataParts(data []byte) ([][]byte, error) {
-
-// 	var parts [][]byte
-// 	buf := data
-
-// 	for len(buf) > 0 {
-
-// 		//first 4 bytes give the length of the data
-// 		if len(data) < 4 {
-// 			return nil, fmt.Errorf("in splitPlotDataParts: invalid prefix")
-// 		}
-
-// 		// read length (little-endian)
-// 		partLen := binary.LittleEndian.Uint32(buf[:4])
-// 		buf = buf[4:]
-
-// 		if uint32(len(buf)) < partLen {
-// 			return nil, fmt.Errorf("in splitPlotDataParts: invalid part")
-// 		}
-
-// 		chunk := buf[:partLen]
-// 		parts = append(parts, chunk)
-// 		buf = buf[partLen:]
-
-// 	}
-
-// 	return parts, nil
-
-// }

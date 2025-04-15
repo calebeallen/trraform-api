@@ -13,6 +13,13 @@ type Offense struct {
 	Reason   string     `bson:"reason"`
 }
 
+type Subscription struct {
+	ProductId      string `bson:"productId"`
+	SubscriptionId string `bson:"subscriptionId"`
+	IsActive       bool   `bson:"isActive"`
+	RecurredCount  int    `bson:"recurredCount"`
+}
+
 type User struct {
 	Id             bson.ObjectID `bson:"_id,omitempty"`
 	Ctime          time.Time     `bson:"ctime"`
@@ -22,7 +29,8 @@ type User struct {
 	PassHash       string        `bson:"passHash"`
 	GoogleId       string        `bson:"googleId"`
 	StripeCustomer string        `bson:"stripeCustomer"`
-	Subscribed     bool          `bson:"subscribed"`
+	Subscription   Subscription  `bson:"subscription"`
+	SubRefreshCnt  int           `bson:"subRefreshCnt"`
 	PlotCredits    int           `bson:"plotCredits"`
 	PlotIds        []string      `bson:"plotIds"`
 	Offenses       []Offense     `bson:"offenses"`

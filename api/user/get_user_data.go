@@ -56,7 +56,7 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responseData.Username = user.Username
-	responseData.Subscribed = user.Subscribed
+	responseData.Subscribed = user.Subscription.IsActive
 	responseData.PlotCredits = user.PlotCredits
 	responseData.PlotIds = user.PlotIds
 	responseData.Offenses = user.Offenses
