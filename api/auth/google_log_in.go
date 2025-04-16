@@ -90,7 +90,7 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 			GoogleId:       googleId,
 			Email:          email,
 			StripeCustomer: stripeCustomer.ID,
-			PlotCredits:    2,
+			PlotCredits:    1,
 			PlotIds:        []string{},
 			Offenses:       []schemas.Offense{},
 		}

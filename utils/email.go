@@ -26,14 +26,48 @@ func SendVerificationEmail(ctx context.Context, to string) (*EmailStatus, error)
 	verifyUrl := fmt.Sprintf("%s/auth/verify-email?token=%s&email=%s", Origin, encodedToken, encodedEmail)
 	html := fmt.Sprintf(`
 		<!DOCTYPE html>
-		<html>
-			<body style="font-family: Arial, sans-serif; padding: 20px;">
-				<h2>Welcome to Trraform!</h2>
-				<p>Thanks for signing up. Click the link below to verify your email:</p>
-				<p><a href="%s">Verify Email</a></p>
-			</body>
-		</html>
-	`, verifyUrl)
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+		</head>
+		<body style="margin: 0; padding: 0; background-color: #18181b; font-family: sans-serif;">
+			<table width="100%%" cellspacing="0" cellpadding="0">
+				<tr>
+					<td align="center" style="padding: 40px 20px;">
+						<table width="600" style="background-color: #27272a; border-radius: 8px;">
+							<tr>
+								<td valign="top" style="padding: 32px; width: 60%%; padding-right: 20px;">
+									<div style="color: #FFF; font-size: 24px; font-weight: bold;">Welcome!</div>
+									<div style="padding-top: 12px; font-size: 16px; color: #FFF;">
+										Thanks for joining Trraform! Verify your email to start building.
+									</div>
+									<div style="padding-top: 24px;">
+										<a href="%s" style="
+											background-color: #007BFF;
+											color: #FFFFFF;
+											text-decoration: none;
+											padding: 12px 24px;
+											border-radius: 6px;
+											display: inline-block;
+											font-weight: bold;
+										">
+											Verify Email
+										</a>
+									</div>
+								</td>
+								<td valign="top" style="text-align: center;">
+									<img src="%s/email_img.png"
+										alt="Image"
+										width="200"
+										style="background: transparent;">
+								</td>
+							</tr>
+						</table>
+					</td>
+				</tr>
+			</table>
+		</body>
+		</html>`, verifyUrl, Origin)
 
 	return sendEmail(ctx, "verify", to, token, "Verify your email", html)
 
@@ -47,14 +81,48 @@ func SendResetPasswordEmail(ctx context.Context, to string) (*EmailStatus, error
 	url := fmt.Sprintf("%s/auth/reset-password?token=%s&email=%s", Origin, encodedToken, encodedEmail)
 	html := fmt.Sprintf(`
 		<!DOCTYPE html>
-		<html>
-			<body style="font-family: Arial, sans-serif; padding: 20px;">
-				<h2>Reset password!</h2>
-				<p>Click the link below to reset your password.</p>
-				<p><a href="%s">Reset</a></p>
-			</body>
-		</html>
-	`, url)
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+		</head>
+		<body style="margin: 0; padding: 0; background-color: #18181b; font-family: sans-serif;">
+			<table width="100%%" cellspacing="0" cellpadding="0">
+				<tr>
+					<td align="center" style="padding: 40px 20px;">
+						<table width="600" style="background-color: #27272a; border-radius: 8px;">
+							<tr>
+								<td valign="top" style="padding: 32px; width: 60%%; padding-right: 20px;">
+									<div style="color: #FFF; font-size: 24px; font-weight: bold;">Reset Password</div>
+									<div style="padding-top: 12px; font-size: 16px; color: #FFF;">
+										Click the button below to reset your password.
+									</div>
+									<div style="padding-top: 24px;">
+										<a href="%s" style="
+											background-color: #007BFF;
+											color: #FFFFFF;
+											text-decoration: none;
+											padding: 12px 24px;
+											border-radius: 6px;
+											display: inline-block;
+											font-weight: bold;
+										">
+											Reset password
+										</a>
+									</div>
+								</td>
+								<td valign="top" style="text-align: center;">
+									<img src="%s/email_img.png"
+										alt="Image"
+										width="200"
+										style="background: transparent;">
+								</td>
+							</tr>
+						</table>
+					</td>
+				</tr>
+			</table>
+		</body>
+		</html>`, url, Origin)
 
 	return sendEmail(ctx, "reset", to, token, "Reset password", html)
 

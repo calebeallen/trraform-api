@@ -119,7 +119,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		Email:          requestData.Email,
 		PassHash:       string(passHash),
 		StripeCustomer: customer.ID,
-		PlotCredits:    2,
+		PlotCredits:    1,
 		PlotIds:        []string{},
 		Offenses:       []schemas.Offense{},
 	}

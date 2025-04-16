@@ -12,10 +12,10 @@ import (
 )
 
 type PlotData struct {
-	Name        string `validate:"maxgraphemes=48"`
+	Name        string `validate:"maxgraphemes=32"`
 	Description string `validate:"maxgraphemes=128"`
 	Link        string `validate:"maxgraphemes=256"`
-	LinkTitle   string `validate:"maxgraphemes=64"`
+	LinkTitle   string `validate:"maxgraphemes=48"`
 	Verified    bool
 	Owner       string
 	BuildData   []uint16 `validate:"builddata"`

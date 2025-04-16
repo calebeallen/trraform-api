@@ -76,8 +76,6 @@ func StripeWebhook(w http.ResponseWriter, r *http.Request) {
 
 	case "customer.subscription.updated": //handle activate subscription, handle cancellation at end of month flag
 
-		fmt.Println("updated")
-
 		var subscription stripe.Subscription
 		if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
 			utils.LogErrorDiscord("StripeWebhook", err, nil)
@@ -92,11 +90,7 @@ func StripeWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fmt.Println("updated end")
-
 	case "invoice.paid": // listen for monthly renewal
-
-		fmt.Println("invoice paid")
 
 		var invoice stripe.Invoice
 		if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
@@ -112,8 +106,6 @@ func StripeWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case "customer.subscription.deleted": // listen for deletion cancellation
-
-		fmt.Println("sub deleted")
 
 		var subscription stripe.Subscription
 		if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
@@ -142,7 +134,6 @@ func StripeWebhook(w http.ResponseWriter, r *http.Request) {
 func handlePaymentSucceeded(ctx context.Context, paymentIntent *stripe.PaymentIntent) error {
 
 	t, ok := paymentIntent.Metadata["type"]
-	fmt.Println(ok, t)
 	if !ok || t != "plot-purchase" {
 		return nil //as of now, there are no other payment events that need handling
 	}
@@ -281,6 +272,10 @@ func handlePaymentSucceeded(ctx context.Context, paymentIntent *stripe.PaymentIn
 
 func handlePaymentFailed(paymentIntent *stripe.PaymentIntent) error {
 
+	t, ok := paymentIntent.Metadata["type"]
+	if !ok || t != "plot-purchase" {
+		return nil
+	}
 	uid := paymentIntent.Metadata["uid"]
 
 	// get list of plotIds

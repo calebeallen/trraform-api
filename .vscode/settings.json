@@ -1,9 +1,11 @@
 {
     "cSpell.words": [
         "bson",
+        "builddata",
         "ctxw",
         "errgroup",
         "idtoken",
+        "maxgraphemes",
         "needsupdate",
         "openplots",
         "plotid",
