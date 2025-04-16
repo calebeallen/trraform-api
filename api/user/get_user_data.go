@@ -8,6 +8,7 @@ import (
 	"trraformapi/utils/schemas"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 func GetUserData(w http.ResponseWriter, r *http.Request) {
@@ -17,7 +18,8 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 	var responseData struct {
 		Token       string            `json:"token"`
 		Username    string            `json:"username"`
-		Subscribed  bool              `json:"subscribed"`
+		SubActive   bool              `json:"subActive"`
+		SubCanceled bool              `json:"subCanceled"`
 		PlotCredits int               `json:"plotCredits"`
 		PlotIds     []string          `json:"plotIds"`
 		Offenses    []schemas.Offense `json:"offenses"`
@@ -47,7 +49,10 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 	query := usersCollection.FindOne(ctx, bson.M{"_id": uid})
 	var user schemas.User
 	err = query.Decode(&user)
-	if err != nil {
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		utils.MakeAPIResponse(w, r, http.StatusNotFound, nil, "User not found", true)
+		return
+	} else if err != nil {
 		if !errors.Is(err, context.Canceled) {
 			utils.LogErrorDiscord("GetUserData", err, token)
 		}
@@ -56,7 +61,8 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responseData.Username = user.Username
-	responseData.Subscribed = user.Subscription.IsActive
+	responseData.SubActive = user.Subscription.IsActive
+	responseData.SubCanceled = user.Subscription.IsCanceled
 	responseData.PlotCredits = user.PlotCredits
 	responseData.PlotIds = user.PlotIds
 	responseData.Offenses = user.Offenses

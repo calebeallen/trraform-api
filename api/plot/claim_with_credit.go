@@ -30,6 +30,10 @@ func ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 		PlotId string `json:"plotId" validate:"required,plotid"`
 	}
 
+	var responseData struct {
+		Conflict bool `json:"conflict"`
+	}
+
 	// validate request body
 	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
 		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
@@ -46,7 +50,7 @@ func ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 	uidString := uid.Hex()
 
 	// lock plot to prevent duplicate claims
-	lockAquired, err := plotutils.LockPlot(ctx, plotIdStr, uidString)
+	lockAcquired, err := plotutils.LockPlot(ctx, plotIdStr, uidString)
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
 			utils.LogErrorDiscord("ClaimWithCredit", err, &requestData)
@@ -57,8 +61,9 @@ func ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 	defer plotutils.UnlockPlot(plotIdStr, uidString)
 
 	// if already locked, return
-	if !lockAquired {
-		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Plot locked", true)
+	if !lockAcquired {
+		responseData.Conflict = true
+		utils.MakeAPIResponse(w, r, http.StatusForbidden, &responseData, "Plot locked", true)
 		return
 	}
 
@@ -72,7 +77,8 @@ func ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if claimed {
-		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Plot already claimed", true)
+		responseData.Conflict = true
+		utils.MakeAPIResponse(w, r, http.StatusForbidden, &responseData, "Plot already claimed", true)
 		return
 	}
 
@@ -147,6 +153,6 @@ func ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	utils.MakeAPIResponse(w, r, http.StatusOK, nil, "Success", false)
+	utils.MakeAPIResponse(w, r, http.StatusOK, responseData, "Success", false)
 
 }

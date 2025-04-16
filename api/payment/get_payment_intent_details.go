@@ -34,14 +34,13 @@ func GetPaymentIntentDetails(w http.ResponseWriter, r *http.Request) {
 
 	intentType, ok := paymentIntent.Metadata["type"]
 	if !ok {
-		utils.LogErrorDiscord("GetPaymentIntentDetails", fmt.Errorf("metadata missing type"), nil)
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
-		return
+		responseData.Type = "sub"
+	} else {
+		responseData.Type = intentType
 	}
-	responseData.Type = intentType
 
 	// get list of plotIds
-	if intentType == "pay" {
+	if intentType == "plot-purchase" {
 
 		var plotIds []string
 

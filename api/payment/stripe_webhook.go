@@ -74,7 +74,9 @@ func StripeWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-	case "customer.subscription.updated":
+	case "customer.subscription.updated": //handle activate subscription, handle cancellation at end of month flag
+
+		fmt.Println("updated")
 
 		var subscription stripe.Subscription
 		if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
@@ -83,16 +85,18 @@ func StripeWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if subscription.Status == "active" {
-			err := handleSubscribe(ctx, &subscription)
-			if err != nil {
-				utils.LogErrorDiscord("StripeWebhook", err, nil)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
+		err := handleUpdateSubscription(ctx, &subscription) // will return if isActive is false
+		if err != nil {
+			utils.LogErrorDiscord("StripeWebhook", err, nil)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
 
+		fmt.Println("updated end")
+
 	case "invoice.paid": // listen for monthly renewal
+
+		fmt.Println("invoice paid")
 
 		var invoice stripe.Invoice
 		if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
@@ -101,13 +105,15 @@ func StripeWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := handleRenew(ctx, &invoice); err != nil {
+		if err := handleRenewSubscription(ctx, &invoice); err != nil {
 			utils.LogErrorDiscord("StripeWebhook", err, nil)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
-	case "customer.subscription.deleted": // listen for cancelation
+	case "customer.subscription.deleted": // listen for deletion cancellation
+
+		fmt.Println("sub deleted")
 
 		var subscription stripe.Subscription
 		if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
@@ -115,7 +121,8 @@ func StripeWebhook(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		err := handleUnsubscribe(ctx, &subscription)
+
+		err := handleDeleteSubscription(ctx, &subscription)
 		if err != nil {
 			utils.LogErrorDiscord("StripeWebhook", err, nil)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -130,12 +137,20 @@ func StripeWebhook(w http.ResponseWriter, r *http.Request) {
 
 }
 
+/* payment intent events */
+
 func handlePaymentSucceeded(ctx context.Context, paymentIntent *stripe.PaymentIntent) error {
+
+	t, ok := paymentIntent.Metadata["type"]
+	fmt.Println(ok, t)
+	if !ok || t != "plot-purchase" {
+		return nil //as of now, there are no other payment events that need handling
+	}
 
 	uidString := paymentIntent.Metadata["uid"]
 
 	// get list of plotIds
-	var plotIds []string
+	plotIds := make([]string, 0)
 	for i := 0; ; i++ {
 		key := fmt.Sprintf("i%d", i)
 		if val, ok := paymentIntent.Metadata[key]; ok {
@@ -151,7 +166,7 @@ func handlePaymentSucceeded(ctx context.Context, paymentIntent *stripe.PaymentIn
 
 	// lock acquisition should never fail here, but just in case, return and handle manually
 	if err != nil || len(lockFailed) != 0 {
-		return fmt.Errorf("in handlePaymentSucceeded, SEVERE ERROR lock acquisiton failed:\n%w", err)
+		return fmt.Errorf("in handlePaymentSucceeded, SEVERE ERROR lock acquisition failed:\n%w", err)
 	}
 
 	// verify that all plots do not already exist
@@ -185,11 +200,11 @@ func handlePaymentSucceeded(ctx context.Context, paymentIntent *stripe.PaymentIn
 
 	// verify that none of the plotIds being inserted already exist
 	// if this operation is successful, all of the plot ids will be added.
-	uid, _ := bson.ObjectIDFromHex(uidString)
+	// uid, _ := bson.ObjectIDFromHex(uidString)
 	var user schemas.User
 	res := usersCollection.FindOneAndUpdate(ctx,
 		bson.M{
-			"_id": uid,
+			"stripeCustomer": paymentIntent.Customer.ID,
 			"plotIds": bson.M{
 				"$not": bson.M{
 					"$elemMatch": bson.M{
@@ -269,7 +284,7 @@ func handlePaymentFailed(paymentIntent *stripe.PaymentIntent) error {
 	uid := paymentIntent.Metadata["uid"]
 
 	// get list of plotIds
-	var plotIds []string
+	plotIds := make([]string, 0)
 	for i := 0; ; i++ {
 		key := fmt.Sprintf("i%d", i)
 		if val, ok := paymentIntent.Metadata[key]; ok {
@@ -284,31 +299,45 @@ func handlePaymentFailed(paymentIntent *stripe.PaymentIntent) error {
 
 }
 
-func handleSubscribe(ctx context.Context, sub *stripe.Subscription) error {
+/* subscription events */
+
+func handleUpdateSubscription(ctx context.Context, sub *stripe.Subscription) error {
+
+	// as of now, ignore update events that are not status active
+	if sub.Status != "active" {
+		return nil
+	}
 
 	usersCollection := utils.MongoDB.Collection("users")
 
 	// update user in mongo
 	var user schemas.User
-	err := usersCollection.FindOneAndUpdate(ctx, bson.M{
-		"stripeCustomer": sub.Customer.ID,
-	}, bson.M{
-		"$set": bson.M{
-			"subscription.isActive":       true,
-			"subscription.productId":      "prod_S7k4E96oClYk9l",
-			"subscription.subscriptionId": sub.ID,
+	err := usersCollection.FindOneAndUpdate(ctx,
+		bson.M{
+			"stripeCustomer": sub.Customer.ID,
 		},
-	}).Decode(&user)
+		bson.M{
+			"$set": bson.M{
+				"subscription.isActive":       true,
+				"subscription.isCanceled":     sub.CancelAtPeriodEnd,
+				"subscription.productId":      "prod_S7k4E96oClYk9l",
+				"subscription.subscriptionId": sub.ID,
+			},
+		},
+		options.FindOneAndUpdate().SetReturnDocument(options.Before),
+	).Decode(&user)
 	if err != nil {
 		return fmt.Errorf("in handleSubscribe, SEVERE ERROR updating user by customer id failed:\n%w", err)
 	}
 
 	// flag user's plots for update so that subscriber benefits show
-	for _, id := range user.PlotIds {
-		plotId, _ := plotutils.PlotIdFromHexString(id)
-		err := plotutils.FlagPlotForUpdate(ctx, plotId)
-		if err != nil {
-			utils.LogErrorDiscord("StripeWebhook", fmt.Errorf("in handleSubscribe error flaging plot for update:\n%w", err), nil)
+	if !user.Subscription.IsActive {
+		for _, id := range user.PlotIds {
+			plotId, _ := plotutils.PlotIdFromHexString(id)
+			err := plotutils.FlagPlotForUpdate(ctx, plotId)
+			if err != nil {
+				utils.LogErrorDiscord("StripeWebhook", fmt.Errorf("in handleSubscribe error flagging plot for update:\n%w", err), nil)
+			}
 		}
 	}
 
@@ -316,7 +345,7 @@ func handleSubscribe(ctx context.Context, sub *stripe.Subscription) error {
 
 }
 
-func handleRenew(ctx context.Context, invoice *stripe.Invoice) error {
+func handleRenewSubscription(ctx context.Context, invoice *stripe.Invoice) error {
 
 	usersCollection := utils.MongoDB.Collection("users")
 
@@ -357,7 +386,7 @@ func handleRenew(ctx context.Context, invoice *stripe.Invoice) error {
 
 }
 
-func handleUnsubscribe(ctx context.Context, sub *stripe.Subscription) error {
+func handleDeleteSubscription(ctx context.Context, sub *stripe.Subscription) error {
 
 	usersCollection := utils.MongoDB.Collection("users")
 
@@ -368,6 +397,7 @@ func handleUnsubscribe(ctx context.Context, sub *stripe.Subscription) error {
 	}, bson.M{
 		"$set": bson.M{
 			"subscription.isActive":       false,
+			"subscription.isCanceled":     true,
 			"subscription.productId":      "",
 			"subscription.subscriptionId": "",
 		},
@@ -381,7 +411,7 @@ func handleUnsubscribe(ctx context.Context, sub *stripe.Subscription) error {
 		plotId, _ := plotutils.PlotIdFromHexString(id)
 		err := plotutils.FlagPlotForUpdate(ctx, plotId)
 		if err != nil {
-			utils.LogErrorDiscord("StripeWebhook", fmt.Errorf("in handleSubscribe error flaging plot for update:\n%w", err), nil)
+			utils.LogErrorDiscord("StripeWebhook", fmt.Errorf("in handleSubscribe error flagging plot for update:\n%w", err), nil)
 		}
 	}
 

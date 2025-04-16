@@ -65,7 +65,7 @@ func CreatePaymentIntent(w http.ResponseWriter, r *http.Request) {
 	var total int64 = 0
 	for i := range plotIds {
 		plotId, _ := plotutils.PlotIdFromHexString(requestData.PlotIds[i])
-		requestData.PlotIds[i] = plotId.ToString() //normailze just incase :)
+		requestData.PlotIds[i] = plotId.ToString() //normalize just incase :)
 		plotIds[i] = plotId
 		total += utils.Price[plotId.Depth()]
 	}
@@ -114,7 +114,7 @@ func CreatePaymentIntent(w http.ResponseWriter, r *http.Request) {
 		Amount:   stripe.Int64(total),
 		Currency: stripe.String(string(stripe.CurrencyUSD)),
 	}
-	params.AddMetadata("type", "pay")
+	params.AddMetadata("type", "plot-purchase")
 	params.AddMetadata("uid", uidString)
 
 	// add plots to metadata

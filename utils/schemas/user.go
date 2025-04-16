@@ -17,6 +17,7 @@ type Subscription struct {
 	ProductId      string `bson:"productId"`
 	SubscriptionId string `bson:"subscriptionId"`
 	IsActive       bool   `bson:"isActive"`
+	IsCanceled     bool   `bson:"isCanceled"`
 	RecurredCount  int    `bson:"recurredCount"`
 }
 
@@ -30,7 +31,6 @@ type User struct {
 	GoogleId       string        `bson:"googleId"`
 	StripeCustomer string        `bson:"stripeCustomer"`
 	Subscription   Subscription  `bson:"subscription"`
-	SubRefreshCnt  int           `bson:"subRefreshCnt"`
 	PlotCredits    int           `bson:"plotCredits"`
 	PlotIds        []string      `bson:"plotIds"`
 	Offenses       []Offense     `bson:"offenses"`

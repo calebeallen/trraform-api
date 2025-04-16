@@ -122,6 +122,7 @@ func main() {
 	router.Get("/payment/intent/details", payment.GetPaymentIntentDetails)
 	router.Post("/payment/intent", payment.CreatePaymentIntent)
 	router.Post("/payment/subscription/create", payment.CreateSubscription)
+	router.Post("/payment/subscription/update", payment.UpdateSubscription)
 	router.Post("/payment/stripe-webhook", payment.StripeWebhook)
 
 	fmt.Println("Server starting")

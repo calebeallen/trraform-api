@@ -42,6 +42,12 @@ func CreateSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// check that they aren't already subscribed
+	if user.Subscription.IsActive {
+		utils.MakeAPIResponse(w, r, http.StatusConflict, nil, "User has active subscription", true)
+		return
+	}
+
 	// save user's card
 	paymentSettings := &stripe.SubscriptionPaymentSettingsParams{
 		SaveDefaultPaymentMethod: stripe.String("on_subscription"),
@@ -52,7 +58,7 @@ func CreateSubscription(w http.ResponseWriter, r *http.Request) {
 		Customer: stripe.String(user.StripeCustomer),
 		Items: []*stripe.SubscriptionItemsParams{
 			{
-				Price: stripe.String("prod_S7k4E96oClYk9l"),
+				Price: stripe.String("price_1RDUa9GgpUJInHeUbqzDcJtJ"),
 			},
 		},
 		PaymentSettings: paymentSettings,
