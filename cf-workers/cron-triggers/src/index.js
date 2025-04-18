@@ -9,8 +9,8 @@ export default {
 
         // update chunks and refresh leaderboard
         const triggers = [
-            fetch(`${SERVER_URL}/cron-jobs/update-chunks`),
-            fetch(`${SERVER_URL}/cron-jobs/refresh-leaderboard`)
+            fetch(`${SERVER_URL}/cron-jobs/update-chunks`, { method: "POST" }),
+            fetch(`${SERVER_URL}/cron-jobs/refresh-leaderboard`, { method: "POST" })
         ]
 
         await Promise.all(triggers)
