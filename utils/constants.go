@@ -1,7 +1,7 @@
 package utils
 
 const (
-	Origin         = "http://localhost:5173"
+	Origin         = "https://trraform.com"
 	MaxColorIndex  = 30649
 	Depth0Count    = 34998
 	SubplotCount   = 24

@@ -1,0 +1,27 @@
+# fly.toml app configuration file generated for trraform-api-4a1d5fa5-8aa8-48ae-83b5-4771e43babf4 on 2025-03-27T23:18:30-04:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'trraform-api-4a1d5fa5-8aa8-48ae-83b5-4771e43babf4'
+primary_region = 'iad'
+
+[build]
+
+[deploy]
+  strategy = 'rolling'
+  max_unavailable = 1.0
+
+[http_service]
+  internal_port = 8080
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = 'requests'
+    soft_limit = 60
+
+[[vm]]
+  size = 'shared-cpu-2x'
+  memory = 1024

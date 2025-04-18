@@ -85,7 +85,7 @@ func main() {
 
 	// Middleware
 	router.Use(cors.Handler(cors.Options{
-		AllowedOrigins: []string{"*"},
+		AllowedOrigins: []string{"http://localhost:5173", "https://trraform.com"},
 		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders: []string{"Content-Type", "Authorization"},
 	}))

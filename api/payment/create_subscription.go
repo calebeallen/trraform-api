@@ -58,7 +58,7 @@ func CreateSubscription(w http.ResponseWriter, r *http.Request) {
 		Customer: stripe.String(user.StripeCustomer),
 		Items: []*stripe.SubscriptionItemsParams{
 			{
-				Price: stripe.String("price_1RDUa9GgpUJInHeUbqzDcJtJ"),
+				Price: stripe.String("price_1RFJ6cKDz3cnvAQjOrqaf8Kq"),
 			},
 		},
 		PaymentSettings: paymentSettings,
