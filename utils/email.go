@@ -54,6 +54,7 @@ func SendVerificationEmail(ctx context.Context, to string) (*EmailStatus, error)
 											Verify Email
 										</a>
 									</div>
+									<div style="font-size: 12px; color: #FFF; padding-top: 24px;">© 2025 Trraform</div>
 								</td>
 								<td valign="top" style="text-align: center;">
 									<img src="%s/email_img.png"
@@ -109,6 +110,7 @@ func SendResetPasswordEmail(ctx context.Context, to string) (*EmailStatus, error
 											Reset password
 										</a>
 									</div>
+									<div style="font-size: 12px; color: #FFF; padding-top: 24px;">© 2025 Trraform</div>
 								</td>
 								<td valign="top" style="text-align: center;">
 									<img src="%s/email_img.png"

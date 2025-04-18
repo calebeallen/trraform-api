@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 	"trraformapi/utils"
 	plotutils "trraformapi/utils/plot_utils"
 
@@ -134,6 +135,26 @@ func UpdateChunks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wg.Wait()
+
+	//clear cache for chunks
+	const ChunkSize = 100
+	n := len(updatedChunkIds)
+	for i := 0; i < n; i += ChunkSize {
+
+		end := min(i+ChunkSize, n)
+		urls := make([]string, end-i)
+
+		for j := i; j < end; j++ {
+			urls[j-i] = fmt.Sprintf("https://chunks.trraform.com/%s.dat", updatedChunkIds[j])
+		}
+
+		err := utils.PurgeCacheCDN(ctx, urls)
+		if err != nil {
+			utils.LogErrorDiscord("UpdateChunks", fmt.Errorf("cache purge failed:\n%w", err), nil)
+		}
+		time.Sleep(time.Second / 7) // cloudflare rate limits > 800 urls/s
+
+	}
 
 	if len(updatedChunkIds) < len(needsUpdate) {
 

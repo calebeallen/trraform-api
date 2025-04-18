@@ -26,10 +26,6 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 		Token string `json:"token" validate:"required"` //google token
 	}
 
-	var responseData struct {
-		Token string `json:"token"`
-	}
-
 	// validate request body
 	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
 		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
@@ -84,7 +80,6 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 		}
 
 		user = schemas.User{
-			Id:             bson.NewObjectID(),
 			Ctime:          time.Now().UTC(),
 			Username:       username,
 			GoogleId:       googleId,
@@ -119,8 +114,11 @@ func GoogleLogIn(w http.ResponseWriter, r *http.Request) {
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
-	responseData.Token = authTokenStr
 
+	var responseData struct {
+		Token string `json:"token"`
+	}
+	responseData.Token = authTokenStr
 	utils.MakeAPIResponse(w, r, http.StatusOK, &responseData, "Success", false)
 
 }

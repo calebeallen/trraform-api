@@ -18,7 +18,8 @@ func SendVerificationEmail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var requestData struct {
-		Email string `json:"email" validate:"required,email"`
+		Email   string `json:"email" validate:"required,email"`
+		CfToken string `json:"cfToken" validate:"required"`
 	}
 
 	// validate request body
@@ -32,6 +33,16 @@ func SendVerificationEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// validate cf turnstile
+	err := utils.ValidateTurnstileToken(ctx, requestData.CfToken)
+	if err != nil {
+		s := struct {
+			InvalidCfToken bool `json:"invalidCfToken"`
+		}{InvalidCfToken: true}
+		utils.MakeAPIResponse(w, r, http.StatusBadRequest, &s, "Invalid cf token", true)
+		return
+	}
+
 	// avoid matching conflict
 	requestData.Email = strings.ToLower(requestData.Email)
 
@@ -40,7 +51,7 @@ func SendVerificationEmail(w http.ResponseWriter, r *http.Request) {
 	// check that a user with this email exists
 	var user schemas.User
 	res := usersCollection.FindOne(ctx, bson.M{"email": requestData.Email})
-	err := res.Decode(&user)
+	err = res.Decode(&user)
 	if errors.Is(err, mongo.ErrNoDocuments) { //doesn't exist, return
 		utils.MakeAPIResponse(w, r, http.StatusNotFound, nil, "User does not exist", true)
 		return

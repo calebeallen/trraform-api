@@ -23,15 +23,11 @@ func PasswordLogIn(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password" validate:"required,password"`
 	}
 
-	var responseData struct {
-		UserExists      bool   `json:"userExists"`
-		PasswordCorrect bool   `json:"passwordCorrect"`
-		EmailVerified   bool   `json:"emailVerified"`
-		Token           string `json:"token"`
+	type responseData struct {
+		CredentialError   bool   `json:"credentialError"`
+		NeedsVerification bool   `json:"needsVerification"`
+		Token             string `json:"token"`
 	}
-	responseData.UserExists = false
-	responseData.PasswordCorrect = false
-	responseData.EmailVerified = false
 
 	// validate request body
 	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
@@ -52,7 +48,10 @@ func PasswordLogIn(w http.ResponseWriter, r *http.Request) {
 	var user schemas.User
 	err := usersCollection.FindOne(ctx, bson.M{"email": strings.ToLower(requestData.Email)}).Decode(&user)
 	if errors.Is(err, mongo.ErrNoDocuments) || user.PassHash == "" { //doesn't exist, return
-		utils.MakeAPIResponse(w, r, http.StatusNotFound, &responseData, "User does not exist", true)
+		resData := responseData{
+			CredentialError: true,
+		}
+		utils.MakeAPIResponse(w, r, http.StatusForbidden, &resData, "Credential error", true)
 		return
 	} else if err != nil {
 		if !errors.Is(err, context.Canceled) {
@@ -62,23 +61,26 @@ func PasswordLogIn(w http.ResponseWriter, r *http.Request) {
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
-	responseData.UserExists = true
 
 	// check password
 	hash := []byte(user.PassHash)
 	if err := bcrypt.CompareHashAndPassword(hash, []byte(requestData.Password)); err != nil {
-		utils.MakeAPIResponse(w, r, http.StatusForbidden, &responseData, "Incorrect password", true)
+		resData := responseData{
+			CredentialError: true,
+		}
+		utils.MakeAPIResponse(w, r, http.StatusForbidden, &resData, "Credential error", true)
 		return
 	}
 	requestData.Password = "" // sanitize logs
-	responseData.PasswordCorrect = true
 
 	// check email verification
 	if !user.EmailVerified {
-		utils.MakeAPIResponse(w, r, http.StatusForbidden, &responseData, "Unverified email", true)
+		resData := responseData{
+			NeedsVerification: true,
+		}
+		utils.MakeAPIResponse(w, r, http.StatusForbidden, &resData, "Unverified email", true)
 		return
 	}
-	responseData.EmailVerified = true
 
 	// issue jwt
 	authToken := utils.CreateNewAuthToken(user.Id)
@@ -88,8 +90,10 @@ func PasswordLogIn(w http.ResponseWriter, r *http.Request) {
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
-	responseData.Token = authTokenStr
 
-	utils.MakeAPIResponse(w, r, http.StatusOK, &responseData, "Success", false)
+	resData := responseData{
+		Token: authTokenStr,
+	}
+	utils.MakeAPIResponse(w, r, http.StatusOK, &resData, "Success", false)
 
 }

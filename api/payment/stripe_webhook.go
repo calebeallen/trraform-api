@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"trraformapi/utils"
 	plotutils "trraformapi/utils/plot_utils"
 	"trraformapi/utils/schemas"
@@ -325,15 +326,39 @@ func handleUpdateSubscription(ctx context.Context, sub *stripe.Subscription) err
 		return fmt.Errorf("in handleSubscribe, SEVERE ERROR updating user by customer id failed:\n%w", err)
 	}
 
-	// flag user's plots for update so that subscriber benefits show
-	if !user.Subscription.IsActive {
-		for _, id := range user.PlotIds {
-			plotId, _ := plotutils.PlotIdFromHexString(id)
-			err := plotutils.FlagPlotForUpdate(ctx, plotId)
+	// if user's subscription was already active (i.e. the update was for cancellation or renewal),
+	// no need to flag plots for verified tag update
+	if user.Subscription.IsActive || len(user.PlotIds) == 0 {
+		return nil
+	}
+
+	// flag user's plots for update so that verification badges show
+	g, ctxw := errgroup.WithContext(ctx)
+	for _, id := range user.PlotIds {
+
+		plotId, _ := plotutils.PlotIdFromHexString(id)
+		g.Go(func() error {
+
+			// update verified metadata
+			err := utils.UpdateMetadataR2(ctxw, "plots", plotId.ToString()+".dat", map[string]string{"verified": strconv.FormatBool(true)})
 			if err != nil {
-				utils.LogErrorDiscord("StripeWebhook", fmt.Errorf("in handleSubscribe error flagging plot for update:\n%w", err), nil)
+				return fmt.Errorf("in handleSubscribe, error updating plot verified metadata:\n%w", err)
 			}
-		}
+
+			// flag for update
+			err = plotutils.FlagPlotForUpdate(ctxw, plotId)
+			if err != nil {
+				return fmt.Errorf("in handleSubscribe, error flagging plot for update:\n%w", err)
+			}
+
+			return nil
+
+		})
+
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	return nil
@@ -398,16 +423,40 @@ func handleDeleteSubscription(ctx context.Context, sub *stripe.Subscription) err
 		},
 	}).Decode(&user)
 	if err != nil {
-		return fmt.Errorf("in handleSubscribe, SEVERE ERROR updating user by customer id failed:\n%w", err)
+		return fmt.Errorf("in handleDeleteSubscription, SEVERE ERROR updating user by customer id failed:\n%w", err)
+	}
+
+	if len(user.PlotIds) == 0 {
+		return nil
 	}
 
 	// flag user's plots for update so that subscriber benefits are removed
+	g, ctxw := errgroup.WithContext(ctx)
 	for _, id := range user.PlotIds {
+
 		plotId, _ := plotutils.PlotIdFromHexString(id)
-		err := plotutils.FlagPlotForUpdate(ctx, plotId)
-		if err != nil {
-			utils.LogErrorDiscord("StripeWebhook", fmt.Errorf("in handleSubscribe error flagging plot for update:\n%w", err), nil)
-		}
+		g.Go(func() error {
+
+			// update verified metadata
+			err := utils.UpdateMetadataR2(ctxw, "plots", plotId.ToString()+".dat", map[string]string{"verified": strconv.FormatBool(false)})
+			if err != nil {
+				return fmt.Errorf("in handleDeleteSubscription, error updating plot verified metadata:\n%w", err)
+			}
+
+			// flag for update
+			err = plotutils.FlagPlotForUpdate(ctxw, plotId)
+			if err != nil {
+				return fmt.Errorf("in handleDeleteSubscription, error flagging plot for update:\n%w", err)
+			}
+
+			return nil
+
+		})
+
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	return nil

@@ -9,7 +9,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -47,7 +49,50 @@ func init() {
 
 }
 
-func HasObjectR2(ctx context.Context, bucket, key string) (bool, error) {
+func ValidateTurnstileToken(ctx context.Context, token string) error {
+
+	if token == "" {
+		return errors.New("missing Turnstile token")
+	}
+
+	formData := url.Values{}
+	formData.Set("secret", os.Getenv("CF_TURNSTILE_SECRET_KEY"))
+	formData.Set("response", token)
+
+	// First request
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://challenges.cloudflare.com/turnstile/v0/siteverify", strings.NewReader(formData.Encode()))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("first turnstile request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read first response body: %w", err)
+	}
+
+	var turnstileResponse struct {
+		Success bool     `json:"success"`
+		Errors  []string `json:"error-codes"`
+	}
+	if err := json.Unmarshal(body, &turnstileResponse); err != nil {
+		return fmt.Errorf("failed to decode first response: %w", err)
+	}
+	if !turnstileResponse.Success {
+		return fmt.Errorf("turnstile verification failed: %v", turnstileResponse.Errors)
+	}
+
+	return nil
+
+}
+
+func HasObjectR2(ctx context.Context, bucket string, key string) (bool, error) {
 
 	if s3Client == nil {
 		return false, fmt.Errorf("in HasObjectR2:\ncould not init s3Client")

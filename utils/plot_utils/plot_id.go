@@ -79,12 +79,7 @@ func CreateSubplotId(plotId *PlotId, local uint64) *PlotId {
 
 func (plotId *PlotId) ToString() string {
 
-	hexStr := fmt.Sprintf("%x", plotId.Id)
-	if len(hexStr)%2 != 0 {
-		hexStr = "0" + hexStr
-	}
-
-	return hexStr
+	return fmt.Sprintf("%x", plotId.Id)
 
 }
 
@@ -126,15 +121,44 @@ func (plotId *PlotId) Validate() bool {
 
 }
 
+func (plotId *PlotId) Split() []uint64 {
+
+	locIds := []uint64{plotId.Id & 0xffffff}
+	id := plotId.Id >> 24
+
+	for id > 0 {
+		locIds = append(locIds, id&0xfff)
+		id >>= 12
+	}
+
+	return locIds
+
+}
+
+func (plotId *PlotId) GetParent() *PlotId {
+
+	depth := plotId.Depth()
+	if depth == 0 {
+		return nil
+	}
+	mask := (1 << (24 + 12*(depth-1))) - 1
+	parentId := plotId.Id & uint64(mask)
+	return &PlotId{Id: parentId}
+
+}
+
 func (plotId *PlotId) GetChunkId() string {
 
 	depth := plotId.Depth()
 
 	if depth == 0 {
-		return fmt.Sprintf("0_%d", chunkMap[plotId.Id-1])
+		return fmt.Sprintf("0_%x", chunkMap[plotId.Id-1])
 	}
 
-	chunkId := plotId.Id / utils.ChunkSize
-	return fmt.Sprintf("%s_%d", plotId.ToString(), chunkId)
+	parentId := plotId.GetParent()
+	split := plotId.Split()
+	chunkId := (split[len(split)-1] - 1) / utils.ChunkSize
+
+	return fmt.Sprintf("%s_%x", parentId.ToString(), chunkId)
 
 }

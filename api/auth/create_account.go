@@ -16,6 +16,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// maybe make find and update atomic? Probably not an issue since a user making multiple quick responses will need to all pass cf turnstile.
 func CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
@@ -24,6 +25,13 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username" validate:"required,username"`
 		Email    string `json:"email" validate:"required,email"`
 		Password string `json:"password" validate:"required,password"`
+		CfToken  string `json:"cfToken" validate:"required"`
+	}
+
+	type responseData struct {
+		InvalidCfToken   bool `json:"invalidCfToken"`
+		UsernameConflict bool `json:"usernameConflict"`
+		EmailConflict    bool `json:"emailConflict"`
 	}
 
 	// validate request body
@@ -43,6 +51,14 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		utils.LogErrorDiscord("CreateAccount", err, &requestData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		return
+	}
+
+	// validate cf turnstile
+	err = utils.ValidateTurnstileToken(ctx, requestData.CfToken)
+	if err != nil {
+		resData := responseData{InvalidCfToken: true}
+		utils.MakeAPIResponse(w, r, http.StatusBadRequest, &resData, "Invalid cf token", true)
 		return
 	}
 
@@ -79,24 +95,20 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	// if username and/or email taken, return
 	if len(users) != 0 {
 
-		var exist struct {
-			Username bool `json:"usernameExist"`
-			Email    bool `json:"emailExist"`
-		}
+		var res responseData
 
-		for i := range users {
+		for _, user := range users {
 
-			user := users[i]
 			if user.Username == requestData.Username {
-				exist.Username = true
+				res.UsernameConflict = true
 			}
 			if user.Email == requestData.Email {
-				exist.Email = true
+				res.EmailConflict = true
 			}
 
 		}
 
-		utils.MakeAPIResponse(w, r, http.StatusConflict, exist, "Credentials already exist", true)
+		utils.MakeAPIResponse(w, r, http.StatusConflict, &res, "Credential conflicts", true)
 		return
 
 	}
@@ -132,6 +144,6 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.MakeAPIResponse(w, r, http.StatusCreated, nil, "Success", false)
+	utils.MakeAPIResponse(w, r, http.StatusCreated, &responseData{}, "Success", false)
 
 }
