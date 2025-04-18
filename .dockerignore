@@ -1,4 +1,5 @@
 .env
 trraform
 scripts
+cf-workers
 .vscode
