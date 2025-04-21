@@ -55,12 +55,10 @@ func RefreshLeaderboard(w http.ResponseWriter, r *http.Request) {
 
 					diff := j - i
 
-					if diff > 0 {
+					if diff >= 0 {
 						newLeaderboard[i].Dir = 1
 					} else if diff < 0 {
 						newLeaderboard[i].Dir = -1
-					} else {
-						newLeaderboard[i].Dir = lastLeaderboard[j].Dir
 					}
 
 					break

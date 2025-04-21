@@ -12,4 +12,4 @@ const (
 	MinBuildSize   = 6
 )
 
-var Price []int64 = []int64{499, 399, 299}
+var Price []int64 = []int64{399, 299, 199}
