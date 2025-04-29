@@ -29,7 +29,7 @@ func FlagPlotForUpdate(ctx context.Context, plotId *PlotId) error {
 	}
 
 	/* new */
-	err = utils.RedisCli.SAdd(ctx, "needs_update:plot_id", plotIdStr).Err()
+	err = utils.RedisCli.SAdd(ctx, "needs_update:plot_ids", plotIdStr).Err()
 	if err != nil {
 		return fmt.Errorf("in FlagPlotForUpdate:\n%w", err)
 	}
