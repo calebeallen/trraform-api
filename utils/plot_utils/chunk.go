@@ -11,25 +11,9 @@ import (
 
 func FlagPlotForUpdate(ctx context.Context, plotId *PlotId) error {
 
-	chunkId := plotId.GetChunkId()
 	plotIdStr := plotId.ToString()
 
-	/* deprecated */
-
-	//flag chunk for update
-	err := utils.RedisCli.SAdd(ctx, "needsupdate", chunkId).Err()
-	if err != nil {
-		return fmt.Errorf("in FlagPlotForUpdate:\n%w", err)
-	}
-
-	//flag plot for update
-	err = utils.RedisCli.SAdd(ctx, fmt.Sprintf("updatechunk:%s", chunkId), plotIdStr).Err()
-	if err != nil {
-		return fmt.Errorf("in FlagPlotForUpdate:\n%w", err)
-	}
-
-	/* new */
-	err = utils.RedisCli.SAdd(ctx, "needs_update:plot_ids", plotIdStr).Err()
+	err := utils.RedisCli.SAdd(ctx, "needs_update:plot_ids", plotIdStr).Err()
 	if err != nil {
 		return fmt.Errorf("in FlagPlotForUpdate:\n%w", err)
 	}
