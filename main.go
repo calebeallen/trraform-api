@@ -114,7 +114,6 @@ func main() {
 	router.Post("/leaderboard/vote", leaderboard.Vote)
 
 	// cron endpoints
-	router.Post("/cron-jobs/update-chunks", cronjobs.UpdateChunks)
 	router.Post("/cron-jobs/refresh-leaderboard", cronjobs.RefreshLeaderboard)
 
 	// payment endpoints
