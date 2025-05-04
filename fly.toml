@@ -23,5 +23,5 @@ primary_region = 'iad'
     soft_limit = 60
 
 [[vm]]
-  size = 'shared-cpu-2x'
-  memory = 512
+  size = 'shared-cpu-1x'
+  memory = 256
