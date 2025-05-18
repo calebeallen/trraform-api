@@ -8,7 +8,7 @@ const (
 	MaxDepth       = 2
 	ChunkSize      = 6
 	BuildSizeStd   = 48
-	BuildSizeLarge = 64
+	BuildSizeLarge = 72
 	MinBuildSize   = 6
 )
 
