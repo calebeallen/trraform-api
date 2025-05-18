@@ -7,8 +7,8 @@ const (
 	SubplotCount   = 24
 	MaxDepth       = 2
 	ChunkSize      = 6
-	BuildSizeStd   = 40
-	BuildSizeLarge = 90
+	BuildSizeStd   = 48
+	BuildSizeLarge = 64
 	MinBuildSize   = 6
 )
 
