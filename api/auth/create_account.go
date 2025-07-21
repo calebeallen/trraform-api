@@ -1,149 +1,99 @@
 package auth
 
+// TODO: create unique index
+
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
+	"trraformapi/api"
 	"trraformapi/utils"
 	"trraformapi/utils/schemas"
 
-	"github.com/stripe/stripe-go/v82"
-	"github.com/stripe/stripe-go/v82/customer"
-	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// maybe make find and update atomic? Probably not an issue since a user making multiple quick responses will need to all pass cf turnstile.
-func CreateAccount(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 
+	defer r.Body.Close()
 	ctx := r.Context()
+	resParams := &api.ResParams{W: w, R: r}
 
-	var requestData struct {
-		Username string `json:"username" validate:"required,username"`
+	var reqData struct {
 		Email    string `json:"email" validate:"required,email"`
 		Password string `json:"password" validate:"required,password"`
 		CfToken  string `json:"cfToken" validate:"required"`
 	}
 
-	type responseData struct {
-		InvalidCfToken   bool `json:"invalidCfToken"`
-		UsernameConflict bool `json:"usernameConflict"`
-		EmailConflict    bool `json:"emailConflict"`
-	}
-
 	// validate request body
-	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
-		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&reqData); err != nil {
+		resParams.Code = http.StatusBadRequest
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
-	defer r.Body.Close()
-	if err := utils.Validate.Struct(&requestData); err != nil {
-		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
+	resParams.ReqData = reqData
+
+	// normalize
+	reqData.Email = strings.TrimSpace(strings.ToLower(reqData.Email))
+	password := strings.TrimSpace(reqData.Password)
+	reqData.Password = ""
+
+	if err := utils.Validate.Struct(&reqData); err != nil {
+		resParams.Code = http.StatusBadRequest
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
 	// hash password and clear it from request data to sanitize logs
-	passHash, err := bcrypt.GenerateFromPassword([]byte(requestData.Password), bcrypt.DefaultCost)
-	requestData.Password = ""
+	passHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		utils.LogErrorDiscord("CreateAccount", err, &requestData)
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		resParams.Code = http.StatusBadRequest
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
-	// validate cf turnstile
-	err = utils.ValidateTurnstileToken(ctx, requestData.CfToken)
+	// validate cf turnstile token
+	err = utils.ValidateTurnstileToken(ctx, reqData.CfToken)
 	if err != nil {
-		resData := responseData{InvalidCfToken: true}
-		utils.MakeAPIResponse(w, r, http.StatusBadRequest, &resData, "Invalid cf token", true)
+		resParams.ResData = &struct {
+			InvalidCFToken bool `json:"invalidCFToken"`
+		}{InvalidCFToken: true}
+		resParams.Code = http.StatusBadRequest
+		h.Res(resParams)
 		return
 	}
 
-	// avoid matching issues
-	requestData.Email = strings.ToLower(requestData.Email)
-
-	usersCollection := utils.MongoDB.Collection("users")
-
-	// check if username or email already exists
-	cursor, err := usersCollection.Find(ctx, bson.M{
-		"$or": bson.A{
-			bson.M{"username": requestData.Username},
-			bson.M{"email": requestData.Email},
-		},
-	})
-	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("CreateAccount", err, &requestData)
-		}
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
-		return
-	}
-	defer cursor.Close(ctx)
-
-	var users []*schemas.User
-	if err := cursor.All(ctx, &users); err != nil {
-		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("CreateAccount", err, &requestData)
-		}
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
-		return
-	}
-
-	// if username and/or email taken, return
-	if len(users) != 0 {
-
-		var res responseData
-
-		for _, user := range users {
-
-			if user.Username == requestData.Username {
-				res.UsernameConflict = true
-			}
-			if user.Email == requestData.Email {
-				res.EmailConflict = true
-			}
-
-		}
-
-		utils.MakeAPIResponse(w, r, http.StatusConflict, &res, "Credential conflicts", true)
-		return
-
-	}
-
-	// create new stripe customer
-	params := stripe.CustomerParams{
-		Email: stripe.String(requestData.Email),
-	}
-	customer, err := customer.New(&params)
-	if err != nil {
-		utils.LogErrorDiscord("CreateAccount", err, &requestData)
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
-		return
-	}
-
-	// create default entry in mongo
+	// create user entry in mongo
 	newUser := &schemas.User{
-		Ctime:          time.Now().UTC(),
-		Username:       requestData.Username,
-		Email:          requestData.Email,
-		PassHash:       string(passHash),
-		StripeCustomer: customer.ID,
-		PlotCredits:    1,
-		PlotIds:        []string{},
-		Offenses:       []schemas.Offense{},
+		Ctime:        time.Now().UTC(),
+		Username:     utils.NewUsername(),
+		Email:        reqData.Email,
+		PassHash:     string(passHash),
+		PlotCredits:  1,
+		PlotIds:      []string{},
+		PurchasedIds: []string{},
+		Offenses:     []schemas.Offense{},
 	}
 
-	if _, err := usersCollection.InsertOne(ctx, newUser); err != nil {
-		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("CreateAccount", err, &requestData)
+	if _, err := h.MongoDB.Collection("users").InsertOne(ctx, newUser); err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			resParams.Code = http.StatusConflict
+		} else {
+			resParams.Code = http.StatusInternalServerError
 		}
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
-	utils.MakeAPIResponse(w, r, http.StatusCreated, &responseData{}, "Success", false)
+	resParams.Code = http.StatusOK
+	h.Res(resParams)
 
 }

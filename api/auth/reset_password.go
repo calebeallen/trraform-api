@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
+	"trraformapi/api"
 	"trraformapi/utils"
 
 	"github.com/redis/go-redis/v9"
@@ -12,38 +14,41 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func ResetPassword(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
+	defer r.Body.Close()
 	ctx := r.Context()
+	resParams := &api.ResParams{W: w, R: r}
 
 	// validate request data
-	var requestData struct {
+	var reqData struct {
 		Token       string `json:"token" validate:"required"`
 		Email       string `json:"email" validate:"required,email"`
 		NewPassword string `json:"newPassword" validate:"required,password"`
 	}
 
 	// validate request body
-	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
 		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
 		return
 	}
-	defer r.Body.Close()
-	if err := utils.Validate.Struct(&requestData); err != nil {
+	password := strings.TrimSpace(reqData.NewPassword)
+	reqData.Password = ""
+	if err := utils.Validate.Struct(&reqData); err != nil {
 		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
 		return
 	}
 
 	// hash password and clear it from request data so it is not sent to error logs
-	passHash, err := bcrypt.GenerateFromPassword([]byte(requestData.NewPassword), bcrypt.DefaultCost)
-	requestData.NewPassword = ""
+	passHash, err := bcrypt.GenerateFromPassword([]byte(reqData.NewPassword), bcrypt.DefaultCost)
+	reqData.NewPassword = ""
 	if err != nil {
-		utils.LogErrorDiscord("ResetPassword", err, &requestData)
+		utils.LogErrorDiscord("ResetPassword", err, &reqData)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
 
-	redisKey := "email:reset:token:" + requestData.Email
+	redisKey := "email:reset:token:" + reqData.Email
 
 	// validate token by first checking if it exists in redis
 	redisToken, err := utils.RedisCli.Get(ctx, redisKey).Result()
@@ -52,14 +57,14 @@ func ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("ResetPassword", err, &requestData)
+			utils.LogErrorDiscord("ResetPassword", err, &reqData)
 		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
 
 	// validate that token in redis is the same as one sent
-	if redisToken != requestData.Token {
+	if redisToken != reqData.Token {
 		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Invalid token", true)
 		return
 	}
@@ -68,7 +73,7 @@ func ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	// reset password
 	_, err = usersCollection.UpdateOne(ctx, bson.M{
-		"email": requestData.Email,
+		"email": reqData.Email,
 	}, bson.M{
 		"$set": bson.M{
 			"passHash": string(passHash),
@@ -76,7 +81,7 @@ func ResetPassword(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("ResetPassword", err, &requestData)
+			utils.LogErrorDiscord("ResetPassword", err, &reqData)
 		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
@@ -86,7 +91,7 @@ func ResetPassword(w http.ResponseWriter, r *http.Request) {
 	_, err = utils.RedisCli.Del(ctx, redisKey).Result()
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("ResetPassword", err, &requestData)
+			utils.LogErrorDiscord("ResetPassword", err, &reqData)
 		}
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return

@@ -1,18 +1,23 @@
 package utils
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"math/big"
 	"net/http"
-	"regexp"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
+	petname "github.com/dustinkirkland/golang-petname"
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.uber.org/zap"
 )
 
+var Logger *zap.Logger
 var RedisCli *redis.Client
 var MongoCli *mongo.Client
 var MongoDB *mongo.Database
@@ -27,20 +32,31 @@ type APIResponse struct {
 	Error   bool   `json:"error"`
 }
 
-func init() {
+func NewUsername() string {
+	petname.NonDeterministicMode()
+	n, _ := rand.Int(rand.Reader, big.NewInt(1000))
+	return fmt.Sprintf("%s-%03d", petname.Generate(2, "-"), n.Int64())
+}
 
-	Validate.RegisterValidation("username", func(fl validator.FieldLevel) bool {
-		username := fl.Field().String()
-		re := regexp.MustCompile(`^[a-zA-Z0-9._]{3,32}$`)
-		return re.MatchString(username)
-	})
+type Handler struct {
+	logger       *zap.Logger
+	validate     *validator.Validate
+	mongoDB      *mongo.Database
+	redisClient  *redis.Client
+	awsSESClient *ses.Client
+	r2Client     *s3.Client
+}
 
-	Validate.RegisterValidation("password", func(fl validator.FieldLevel) bool {
-		password := fl.Field().String()
-		re := regexp.MustCompile(`^[A-Za-z0-9~` + "`" + `!@#$%^&*()_\-+={[}\]|\\:;"'<,>.?/]{8,128}$`)
-		return re.MatchString(password)
-	})
-
+type ResParams struct {
+	w        http.ResponseWriter
+	r        *http.Request
+	endpoint string
+	code     int
+	msg      string
+	err      error
+	errmsg   string
+	reqData  any // 4 logs
+	resData  any
 }
 
 func MakeAPIResponse(w http.ResponseWriter, r *http.Request, code int, data any, message string, err bool) {

@@ -1,16 +1,25 @@
 {
     "cSpell.words": [
+        "AWSSES",
         "bson",
         "builddata",
+        "cenuh",
         "ctxw",
+        "emailq",
         "errgroup",
+        "errmsg",
         "idtoken",
         "maxgraphemes",
         "needsupdate",
         "openplots",
+        "petname",
         "plotid",
         "plotutils",
+        "readpref",
+        "redns",
+        "Trraform",
         "trraformapi",
-        "updatechunk"
+        "updatechunk",
+        "vercode"
     ]
 }

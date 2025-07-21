@@ -2,29 +2,35 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"trraformapi/api"
 	"trraformapi/api/auth"
 	cronjobs "trraformapi/api/cron_jobs"
 	"trraformapi/api/leaderboard"
 	"trraformapi/api/payment"
 	"trraformapi/api/plot"
 	"trraformapi/api/user"
-	"trraformapi/utils"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/go-playground/validator/v10"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func init() {
@@ -42,29 +48,54 @@ func init() {
 func main() {
 
 	ctx := context.Background()
+	h := api.Handler{}
 
-	// init mongo connection
+	// init logger
+	logger, err := zap.NewDevelopment(
+		zap.AddCaller(),
+		zap.AddStacktrace(zapcore.ErrorLevel),
+	)
+
+	if err != nil {
+		panic(err)
+	}
+	logger.Info("Server starting...")
+	defer logger.Sync()
+	h.Logger = logger
+
+	// init validator
+	h.Validate = validator.New()
+	h.Validate.RegisterValidation("username", func(fl validator.FieldLevel) bool {
+		username := fl.Field().String()
+		re := regexp.MustCompile(`^[a-zA-Z0-9._]{3,32}$`)
+		return re.MatchString(username)
+	})
+
+	h.Validate.RegisterValidation("password", func(fl validator.FieldLevel) bool {
+		password := fl.Field().String()
+		re := regexp.MustCompile(`^[A-Za-z0-9~` + "`" + `!@#$%^&*()_\-+={[}\]|\\:;"'<,>.?/]{8,128}$`)
+		return re.MatchString(password)
+	})
+
+	// init mongo
 	mongoServerAPI := options.ServerAPI(options.ServerAPIVersion1)
 	mongoOpts := options.Client().ApplyURI("mongodb+srv://caleballen:" + os.Getenv("MONGO_PASSWORD") + "@trraform.cenuh0o.mongodb.net/?retryWrites=true&w=majority&appName=Trraform").SetServerAPIOptions(mongoServerAPI)
 	mongoCli, err := mongo.Connect(mongoOpts)
 	if err != nil {
 		panic(err)
 	}
-	utils.MongoCli = mongoCli
-	utils.MongoDB = mongoCli.Database("Trraform")
-
 	defer func() {
 		if err = mongoCli.Disconnect(ctx); err != nil {
 			panic(err)
 		}
 	}()
-
 	if err := mongoCli.Ping(ctx, readpref.Primary()); err != nil {
 		panic(err)
 	}
+	h.MongoDB = mongoCli.Database("Trraform")
 
-	// init redis client
-	utils.RedisCli = redis.NewClient(&redis.Options{
+	// init redis
+	h.RedisClient = redis.NewClient(&redis.Options{
 		Addr:     "redis-16216.c15.us-east-1-4.ec2.redns.redis-cloud.com:16216",
 		Username: "default",
 		Password: os.Getenv("REDIS_PASSWORD"),
@@ -72,16 +103,29 @@ func main() {
 	})
 
 	// init aws ses
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	sesCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
 	if err != nil {
 		panic(err)
 	}
-	utils.AwsSESCli = ses.NewFromConfig(cfg)
+	h.AWSSESClient = ses.NewFromConfig(sesCfg)
 
-	router := chi.NewRouter()
+	// init s3
+	cred := credentials.NewStaticCredentialsProvider(
+		os.Getenv("CF_R2_ACCESS_KEY"),
+		os.Getenv("CF_R2_SECRET_KEY"),
+		"",
+	)
+	h.R2Client = s3.New(s3.Options{
+		Credentials:  cred,
+		BaseEndpoint: aws.String(os.Getenv("CF_R2_API_ENDPOINT")),
+		UsePathStyle: true,
+		Region:       "auto",
+	})
 
 	// init stripe
 	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
+
+	router := chi.NewRouter()
 
 	// Middleware
 	router.Use(cors.Handler(cors.Options{
@@ -90,14 +134,16 @@ func main() {
 		AllowedHeaders: []string{"Content-Type", "Authorization"},
 	}))
 	router.Use(middleware.Recoverer)
+	router.Use(middleware.RequestSize(1 << 20))
+
+	authH := &auth.Handler{Handler: &h}
+	// paymentsH := &payments.Handler{Handler: deps}
 
 	// auth endpoints (add captcha)
-	router.Post("/auth/create-account", auth.CreateAccount)
-	router.Post("/auth/password-login", auth.PasswordLogIn)
-	router.Post("/auth/google-login", auth.GoogleLogIn)
-	router.Post("/auth/send-verification-email", auth.SendVerificationEmail)
+	router.Post("/auth/create-account", h.CreateAccount)
+	router.Post("/auth/password-login", auth.PasswordLogin)
+	router.Post("/auth/google-login", auth.GoogleLogin)
 	router.Post("/auth/verify-email", auth.VerifyEmail)
-	router.Post("/auth/send-password-reset-email", auth.SendPasswordResetEmail)
 	router.Post("/auth/reset-password", auth.ResetPassword)
 
 	// user endpoints
@@ -123,7 +169,7 @@ func main() {
 	router.Post("/payment/subscription/update", payment.UpdateSubscription)
 	router.Post("/payment/stripe-webhook", payment.StripeWebhook)
 
-	fmt.Println("Server starting")
+	logger.Info("Server running on port 8080")
 	http.ListenAndServe(":8080", router)
 
 }

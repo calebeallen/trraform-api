@@ -22,16 +22,18 @@ type Subscription struct {
 }
 
 type User struct {
-	Id             bson.ObjectID `bson:"_id,omitempty"`
-	Ctime          time.Time     `bson:"ctime"`
-	Username       string        `bson:"username"`
-	Email          string        `bson:"email"`
-	EmailVerified  bool          `bson:"emailVerified"`
-	PassHash       string        `bson:"passHash"`
-	GoogleId       string        `bson:"googleId"`
-	StripeCustomer string        `bson:"stripeCustomer"`
-	Subscription   Subscription  `bson:"subscription"`
-	PlotCredits    int           `bson:"plotCredits"`
-	PlotIds        []string      `bson:"plotIds"`
-	Offenses       []Offense     `bson:"offenses"`
+	Id               bson.ObjectID `bson:"_id,omitempty"`
+	Ctime            time.Time     `bson:"ctime"`
+	Email            string        `bson:"email"`
+	EmailVerified    bool          `bson:"emailVerified"`
+	PassHash         string        `bson:"passHash"`
+	GoogleId         string        `bson:"googleId"`
+	Username         string        `bson:"username"`
+	UnameLastChanged time.Time     `bson:"unameLastChanged"`
+	StripeCustomer   string        `bson:"stripeCustomer"`
+	Subscription     Subscription  `bson:"subscription"`
+	PlotCredits      int           `bson:"plotCredits"`
+	PlotIds          []string      `bson:"plotIds"`
+	PurchasedIds     []string      `bson:"purchasedIds"`
+	Offenses         []Offense     `bson:"offenses"`
 }

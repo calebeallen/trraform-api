@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -77,6 +78,7 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 		if !errors.Is(err, context.Canceled) {
 			utils.LogErrorDiscord("UpdatePlot", err, &requestData)
 		}
+		log.Printf("Error getting user data:\n%v", err)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
@@ -117,6 +119,7 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 		if !errors.Is(err, context.Canceled) {
 			utils.LogErrorDiscord("UpdatePlot", err, &requestData)
 		}
+		log.Printf("Error encoding plot data:\n%v", err)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
@@ -129,6 +132,7 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 			if !errors.Is(err, context.Canceled) {
 				utils.LogErrorDiscord("UpdatePlot", err, &requestData)
 			}
+			log.Printf("Error getting reading default image data:\n%v", err)
 			utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 			return
 		}
@@ -157,6 +161,7 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 		if !errors.Is(err, context.Canceled) {
 			utils.LogErrorDiscord("UpdatePlot", err, &requestData)
 		}
+		log.Printf("Error uploading plot data:\n%v", err)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
@@ -167,6 +172,7 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 		if !errors.Is(err, context.Canceled) {
 			utils.LogErrorDiscord("UpdatePlot", err, &requestData)
 		}
+		log.Printf("Error uploading plot image data:\n%v", err)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}
@@ -177,6 +183,7 @@ func UpdatePlot(w http.ResponseWriter, r *http.Request) {
 		if !errors.Is(err, context.Canceled) {
 			utils.LogErrorDiscord("UpdatePlot", err, &requestData)
 		}
+		log.Printf("Error flagging chunk for update:\n%v", err)
 		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
 		return
 	}

@@ -1,86 +1,100 @@
 package auth
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
+	"trraformapi/api"
 	"trraformapi/utils"
 
-	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func VerifyEmail(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
+	resParams := &api.ResParams{W: w, R: r}
 
 	// validate request data
-	var requestData struct {
-		Token string `json:"token" validate:"required"`
-		Email string `json:"email" validate:"required,email"`
+	var reqData struct {
+		Uid              string `json:"uid" validate:"required"`
+		VerificationCode string `json:"verificationCode" validate:"required"`
 	}
 
 	// validate request body
-	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
-		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&reqData); err != nil {
+		resParams.Code = http.StatusBadRequest
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 	defer r.Body.Close()
-	if err := utils.Validate.Struct(&requestData); err != nil {
-		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
+	resParams.ReqData = reqData
+	if err := utils.Validate.Struct(&reqData); err != nil {
+		resParams.Code = http.StatusBadRequest
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
-	redisKey := "email:verify:token:" + requestData.Email
-
-	// validate token by first checking if it exists in redis
-	redisToken, err := utils.RedisCli.Get(ctx, redisKey).Result()
-	if errors.Is(err, redis.Nil) { // if token not found (expired)
-		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Expired token", true)
-		return
-	} else if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("VerifyEmail", err, &requestData)
-		}
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+	// validate uid
+	uid, err := bson.ObjectIDFromHex(reqData.Uid)
+	if err != nil {
+		resParams.Code = http.StatusBadRequest
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
-	// validate that token in redis is the same as query param token
-	if redisToken != requestData.Token {
-		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Invalid token", true)
+	// check verification code
+	ok, err := utils.ValidateVerificationCode(ctx, reqData.Uid, reqData.VerificationCode)
+	if err != nil {
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
+		return
+	}
+	if !ok {
+		resParams.ResData = &struct {
+			InvalidCode bool `json:"invalidCode"`
+		}{InvalidCode: true}
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
+	// set account to verified
 	usersCollection := utils.MongoDB.Collection("users")
-
-	// set verification status
 	_, err = usersCollection.UpdateOne(ctx, bson.M{
-		"email": requestData.Email,
+		"_id": uid,
 	}, bson.M{
 		"$set": bson.M{
 			"emailVerified": true,
 		},
 	})
 	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("VerifyEmail", err, &requestData)
-		}
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
-	// delete token
-	_, err = utils.RedisCli.Del(ctx, redisKey).Result()
+	//issue token
+	authToken := utils.CreateNewAuthToken(uid)
+	authTokenStr, err := authToken.Sign()
 	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("VerifyEmail", err, &requestData)
-		}
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
-	utils.MakeAPIResponse(w, r, http.StatusOK, nil, "Success", false)
+	resParams.ResData = &struct {
+		Token string `json:"token"`
+	}{Token: authTokenStr}
+	resParams.Code = http.StatusOK
+	h.Res(resParams)
 
 }
