@@ -7,98 +7,56 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
+	"trraformapi/config"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/joho/godotenv"
 )
 
-var s3Client *s3.Client
-
-func init() {
-
-	/* for development */
-	if os.Getenv("ENV") != "prod" {
-		err := godotenv.Load()
-		if err != nil {
-			log.Fatal("Error loading .env file")
-			return
-		}
-	}
-
-	cred := credentials.NewStaticCredentialsProvider(os.Getenv("CF_R2_ACCESS_KEY"), os.Getenv("CF_R2_SECRET_KEY"), "")
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithCredentialsProvider(cred))
-	if err != nil {
-		return
-	}
-
-	s3Client = s3.New(s3.Options{
-		Credentials:  cfg.Credentials,
-		BaseEndpoint: aws.String(os.Getenv("CF_R2_API_ENDPOINT")),
-		UsePathStyle: true,
-		Region:       "auto",
-	})
-
-}
-
-func ValidateTurnstileToken(ctx context.Context, token string) error {
-
-	if token == "" {
-		return errors.New("missing Turnstile token")
-	}
+func ValidateTurnstileToken(httpCli *http.Client, ctx context.Context, token string) error {
 
 	formData := url.Values{}
-	formData.Set("secret", os.Getenv("CF_TURNSTILE_SECRET_KEY"))
+	formData.Set("secret", config.ENV.CF_TURNSTILE_SECRET_KEY)
 	formData.Set("response", token)
 
-	// First request
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://challenges.cloudflare.com/turnstile/v0/siteverify", strings.NewReader(formData.Encode()))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	res, err := http.DefaultClient.Do(req)
+	res, err := httpCli.Do(req)
 	if err != nil {
-		return fmt.Errorf("first turnstile request failed: %w", err)
+		return err
 	}
 	defer res.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read first response body: %w", err)
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("turnstile verify http %d", res.StatusCode)
 	}
 
-	var turnstileResponse struct {
-		Success bool     `json:"success"`
-		Errors  []string `json:"error-codes"`
+	var resp struct {
+		Success    bool     `json:"success"`
+		ErrorCodes []string `json:"error-codes"`
 	}
-	if err := json.Unmarshal(body, &turnstileResponse); err != nil {
-		return fmt.Errorf("failed to decode first response: %w", err)
+	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
+		return err
 	}
-	if !turnstileResponse.Success {
-		return fmt.Errorf("turnstile verification failed: %v", turnstileResponse.Errors)
+	if !resp.Success {
+		return fmt.Errorf("turnstile verify failed: %v", resp.ErrorCodes)
 	}
 
 	return nil
 
 }
 
-func HasObjectR2(ctx context.Context, bucket string, key string) (bool, error) {
+func HasObjectR2(r2Cli *s3.Client, ctx context.Context, bucket string, key string) (bool, error) {
 
-	if s3Client == nil {
-		return false, fmt.Errorf("in HasObjectR2:\ncould not init s3Client")
-	}
-
-	_, err := s3Client.HeadObject(ctx, &s3.HeadObjectInput{
+	_, err := r2Cli.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
 	})
@@ -107,20 +65,16 @@ func HasObjectR2(ctx context.Context, bucket string, key string) (bool, error) {
 	if errors.As(err, &notFound) {
 		return false, nil
 	} else if err != nil {
-		return false, fmt.Errorf("in HasObjectR2: %w", err)
+		return false, err
 	}
 
 	return true, nil
 
 }
 
-func PutObjectR2(ctx context.Context, bucket string, key string, body io.Reader, contentType string, metadata map[string]string) error {
+func PutObjectR2(r2Cli *s3.Client, ctx context.Context, bucket string, key string, body io.Reader, contentType string, metadata map[string]string) error {
 
-	if s3Client == nil {
-		return fmt.Errorf("in PutObjectR2:\ncould not init s3Client")
-	}
-
-	_, err := s3Client.PutObject(ctx, &s3.PutObjectInput{
+	_, err := r2Cli.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      &bucket,
 		Key:         &key,
 		Body:        body,
@@ -128,20 +82,16 @@ func PutObjectR2(ctx context.Context, bucket string, key string, body io.Reader,
 		Metadata:    metadata,
 	})
 	if err != nil {
-		return fmt.Errorf("in PutObjectR2:\n%w", err)
+		return err
 	}
 
 	return nil
 
 }
 
-func UpdateMetadataR2(ctx context.Context, bucket string, key string, metadata map[string]string) error {
+func UpdateMetadataR2(r2Cli *s3.Client, ctx context.Context, bucket string, key string, metadata map[string]string) error {
 
-	if s3Client == nil {
-		return fmt.Errorf("in PutObjectR2:\ncould not init s3Client")
-	}
-
-	_, err := s3Client.CopyObject(ctx, &s3.CopyObjectInput{
+	_, err := r2Cli.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:            aws.String(bucket),
 		CopySource:        aws.String(bucket + "/" + key),
 		Key:               aws.String(key),
@@ -149,38 +99,34 @@ func UpdateMetadataR2(ctx context.Context, bucket string, key string, metadata m
 		MetadataDirective: types.MetadataDirectiveReplace, // IMPORTANT
 	})
 	if err != nil {
-		return fmt.Errorf("in UpdateMetadataR2:\n%w", err)
+		return err
 	}
 
 	return nil
 
 }
 
-func GetObjectR2(ctx context.Context, bucket string, key string) ([]byte, map[string]string, error) {
+func GetObjectR2(r2Cli *s3.Client, ctx context.Context, bucket string, key string) ([]byte, map[string]string, error) {
 
-	if s3Client == nil {
-		return nil, nil, fmt.Errorf("could not init s3Client")
-	}
-
-	result, err := s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
+	result, err := r2Cli.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("in GetObjectR2:\n%w", err)
+		return nil, nil, err
 	}
 	defer result.Body.Close()
 
 	data, err := io.ReadAll(result.Body)
 	if err != nil {
-		return nil, nil, fmt.Errorf("in GetObjectR2:\n%w", err)
+		return nil, nil, err
 	}
 
 	return data, result.Metadata, nil
 
 }
 
-func PurgeCacheCDN(ctx context.Context, urls []string) error {
+func PurgeCacheCDN(httpCli *http.Client, ctx context.Context, urls []string) error {
 
 	type Headers struct {
 		Origin string `json:"Origin"`
@@ -198,30 +144,40 @@ func PurgeCacheCDN(ctx context.Context, urls []string) error {
 		payload.Files[i] = File{
 			Url: url,
 			Headers: Headers{
-				Origin: Origin,
+				Origin: config.GEN.ORIGIN,
 			},
 		}
 	}
 	payloadBytes, err := json.Marshal(&payload)
 	if err != nil {
-		return fmt.Errorf("in PurgeCacheCDN:\n%w", err)
+		return err
 	}
 
-	apiUrl := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/purge_cache", os.Getenv("CF_ZONE_ID"))
+	apiUrl := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/purge_cache", config.ENV.CF_ZONE_ID)
 	req, err := http.NewRequestWithContext(ctx, "POST", apiUrl, bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		return fmt.Errorf("in PurgeCacheCDN:\n%w", err)
+		return err
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("CF_API_TOKEN")))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.ENV.CF_API_TOKEN))
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-	res, err := client.Do(req)
+	res, err := httpCli.Do(req)
 	if err != nil {
-		return fmt.Errorf("in PurgeCacheCDN:\n%w", err)
+		return err
 	}
 	defer res.Body.Close()
+
+	var purgeRes struct {
+		Success bool     `json:"success"`
+		Errors  []string `json:"errors"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&purgeRes); err != nil {
+		return err
+	}
+	if !purgeRes.Success {
+		return fmt.Errorf("purge failed: %v", purgeRes.Errors)
+	}
 
 	return nil
 

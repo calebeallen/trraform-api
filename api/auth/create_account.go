@@ -43,24 +43,24 @@ func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 	password := strings.TrimSpace(reqData.Password)
 	reqData.Password = ""
 
-	if err := utils.Validate.Struct(&reqData); err != nil {
+	if err := h.Validate.Struct(&reqData); err != nil {
 		resParams.Code = http.StatusBadRequest
 		resParams.Err = err
 		h.Res(resParams)
 		return
 	}
 
-	// hash password and clear it from request data to sanitize logs
+	// hash password
 	passHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		resParams.Code = http.StatusBadRequest
+		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
 		h.Res(resParams)
 		return
 	}
 
 	// validate cf turnstile token
-	err = utils.ValidateTurnstileToken(ctx, reqData.CfToken)
+	err = utils.ValidateTurnstileToken(h.HttpCli, ctx, reqData.CfToken)
 	if err != nil {
 		resParams.ResData = &struct {
 			InvalidCFToken bool `json:"invalidCFToken"`

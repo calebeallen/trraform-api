@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"regexp"
+	"time"
 	"trraformapi/api"
 	"trraformapi/api/auth"
 	cronjobs "trraformapi/api/cron_jobs"
@@ -23,7 +23,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-playground/validator/v10"
-	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -32,18 +31,6 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
-
-func init() {
-
-	if os.Getenv("ENV") != "prod" {
-		err := godotenv.Load()
-		if err != nil {
-			log.Fatal("Error loading .env file")
-			return
-		}
-	}
-
-}
 
 func main() {
 
@@ -77,6 +64,10 @@ func main() {
 		return re.MatchString(password)
 	})
 
+	h.HttpCli = &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
 	// init mongo
 	mongoServerAPI := options.ServerAPI(options.ServerAPIVersion1)
 	mongoOpts := options.Client().ApplyURI("mongodb+srv://caleballen:" + os.Getenv("MONGO_PASSWORD") + "@trraform.cenuh0o.mongodb.net/?retryWrites=true&w=majority&appName=Trraform").SetServerAPIOptions(mongoServerAPI)
@@ -95,7 +86,7 @@ func main() {
 	h.MongoDB = mongoCli.Database("Trraform")
 
 	// init redis
-	h.RedisClient = redis.NewClient(&redis.Options{
+	h.RedisCli = redis.NewClient(&redis.Options{
 		Addr:     "redis-16216.c15.us-east-1-4.ec2.redns.redis-cloud.com:16216",
 		Username: "default",
 		Password: os.Getenv("REDIS_PASSWORD"),
@@ -107,7 +98,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	h.AWSSESClient = ses.NewFromConfig(sesCfg)
+	h.AWSSESCli = ses.NewFromConfig(sesCfg)
 
 	// init s3
 	cred := credentials.NewStaticCredentialsProvider(
@@ -115,7 +106,7 @@ func main() {
 		os.Getenv("CF_R2_SECRET_KEY"),
 		"",
 	)
-	h.R2Client = s3.New(s3.Options{
+	h.R2Cli = s3.New(s3.Options{
 		Credentials:  cred,
 		BaseEndpoint: aws.String(os.Getenv("CF_R2_API_ENDPOINT")),
 		UsePathStyle: true,
@@ -140,11 +131,11 @@ func main() {
 	// paymentsH := &payments.Handler{Handler: deps}
 
 	// auth endpoints (add captcha)
-	router.Post("/auth/create-account", h.CreateAccount)
-	router.Post("/auth/password-login", auth.PasswordLogin)
-	router.Post("/auth/google-login", auth.GoogleLogin)
-	router.Post("/auth/verify-email", auth.VerifyEmail)
-	router.Post("/auth/reset-password", auth.ResetPassword)
+	router.Post("/auth/create-account", authH.CreateAccount)
+	router.Post("/auth/password-login", authH.PasswordLogin)
+	router.Post("/auth/google-login", authH.GoogleLogin)
+	router.Post("/auth/verify-email", authH.VerifyEmail)
+	router.Post("/auth/reset-password", authH.ResetPassword)
 
 	// user endpoints
 	router.Get("/user", user.GetUserData)

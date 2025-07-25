@@ -11,7 +11,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var ErrUnusedVerificationCode = errors.New("unused valid code")
+var ErrUnusedVerificationCode = errors.New("attempted to create a verification code when an unused valid code already exists.")
 var ErrVerificationCodeNotFound = errors.New("verification code not found")
 
 var validateScript = redis.NewScript(`
@@ -22,10 +22,10 @@ var validateScript = redis.NewScript(`
 	return 0
 `)
 
-func NewVerificationCode(ctx context.Context, uid string) (string, error) {
+func NewVerificationCode(redisCli *redis.Client, ctx context.Context, email string) (string, error) {
 
 	// if a code already exist
-	key := "vercode:" + uid
+	key := "vercode:" + email
 	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
 	if err != nil {
 		return "", err
@@ -33,9 +33,9 @@ func NewVerificationCode(ctx context.Context, uid string) (string, error) {
 	code := fmt.Sprintf("%06d", uint32(n.Uint64()))
 
 	// set new code if not already set
-	ok, err := RedisCli.SetNX(ctx, key, code, 30*time.Minute).Result()
+	ok, err := redisCli.SetNX(ctx, key, code, 30*time.Minute).Result()
 	if err != nil {
-		return "", fmt.Errorf("in SetVerificationCode (0):\n%w", err)
+		return "", err
 	}
 	if !ok {
 		return "", ErrUnusedVerificationCode
@@ -45,28 +45,28 @@ func NewVerificationCode(ctx context.Context, uid string) (string, error) {
 
 }
 
-func GetVerificationCodeByUid(ctx context.Context, uid string) (string, error) {
+func GetVerificationCodeByUid(redisCli *redis.Client, ctx context.Context, email string) (string, error) {
 
-	key := "vercode:" + uid
-	code, err := RedisCli.Get(ctx, key).Result()
+	key := "vercode:" + email
+	code, err := redisCli.Get(ctx, key).Result()
 
 	if err == redis.Nil {
 		return "", ErrVerificationCodeNotFound
 	} else if err != nil {
-		return "", fmt.Errorf("in GetVerificationCodeByUid (0):\n%w", err)
+		return "", err
 	}
 
 	return code, nil
 
 }
 
-func ValidateVerificationCode(ctx context.Context, uid string, code string) (bool, error) {
+func ValidateVerificationCode(redisCli *redis.Client, ctx context.Context, email string, code string) (bool, error) {
 
-	key := "vercode:" + uid
+	key := "vercode:" + email
 
-	res, err := validateScript.Run(ctx, RedisCli, []string{key}, code).Int()
+	res, err := validateScript.Run(ctx, redisCli, []string{key}, code).Int()
 	if err != nil {
-		return false, fmt.Errorf("in ValidateVerificationCode (0):\n%w", err)
+		return false, err
 	}
 	if res == 1 {
 		return true, nil

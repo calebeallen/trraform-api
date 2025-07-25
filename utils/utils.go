@@ -17,14 +17,6 @@ import (
 	"go.uber.org/zap"
 )
 
-var Logger *zap.Logger
-var RedisCli *redis.Client
-var MongoCli *mongo.Client
-var MongoDB *mongo.Database
-var AwsSESCli *ses.Client
-
-var Validate = validator.New()
-
 type APIResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`

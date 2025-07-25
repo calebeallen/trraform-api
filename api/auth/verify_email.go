@@ -3,21 +3,25 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"trraformapi/api"
 	"trraformapi/utils"
+	"trraformapi/utils/schemas"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 
+	defer r.Body.Close()
 	ctx := r.Context()
 	resParams := &api.ResParams{W: w, R: r}
 
 	// validate request data
 	var reqData struct {
-		Uid              string `json:"uid" validate:"required"`
-		VerificationCode string `json:"verificationCode" validate:"required"`
+		Email     string `json:"email" validate:"required,email"`
+		VerifCode string `json:"verifCode" validate:"required"`
 	}
 
 	// validate request body
@@ -29,18 +33,12 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		h.Res(resParams)
 		return
 	}
-	defer r.Body.Close()
 	resParams.ReqData = reqData
-	if err := utils.Validate.Struct(&reqData); err != nil {
-		resParams.Code = http.StatusBadRequest
-		resParams.Err = err
-		h.Res(resParams)
-		return
-	}
 
-	// validate uid
-	uid, err := bson.ObjectIDFromHex(reqData.Uid)
-	if err != nil {
+	// normalize
+	reqData.Email = strings.TrimSpace(strings.ToLower(reqData.Email))
+
+	if err := h.Validate.Struct(&reqData); err != nil {
 		resParams.Code = http.StatusBadRequest
 		resParams.Err = err
 		h.Res(resParams)
@@ -48,7 +46,7 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check verification code
-	ok, err := utils.ValidateVerificationCode(ctx, reqData.Uid, reqData.VerificationCode)
+	ok, err := utils.ValidateVerificationCode(h.RedisCli, ctx, reqData.Email, reqData.VerifCode)
 	if err != nil {
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
@@ -66,14 +64,12 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// set account to verified
-	usersCollection := utils.MongoDB.Collection("users")
-	_, err = usersCollection.UpdateOne(ctx, bson.M{
-		"_id": uid,
-	}, bson.M{
-		"$set": bson.M{
-			"emailVerified": true,
-		},
-	})
+	var updatedUser schemas.User
+	err = h.MongoDB.Collection("").FindOneAndUpdate(ctx,
+		bson.M{"email": reqData.Email},
+		bson.M{"$set": bson.M{"emailVerified": true}},
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	).Decode(&updatedUser)
 	if err != nil {
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
@@ -81,8 +77,8 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//issue token
-	authToken := utils.CreateNewAuthToken(uid)
+	// create token
+	authToken := utils.CreateNewAuthToken(updatedUser.Id)
 	authTokenStr, err := authToken.Sign()
 	if err != nil {
 		resParams.Code = http.StatusInternalServerError

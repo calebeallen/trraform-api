@@ -1,15 +1,12 @@
 package auth
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"trraformapi/api"
 	"trraformapi/utils"
 
-	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -22,81 +19,77 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	// validate request data
 	var reqData struct {
-		Token       string `json:"token" validate:"required"`
 		Email       string `json:"email" validate:"required,email"`
 		NewPassword string `json:"newPassword" validate:"required,password"`
+		VerifCode   string `json:"verifCode" validate:"required"`
 	}
 
 	// validate request body
-	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
-		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&reqData); err != nil {
+		resParams.Code = http.StatusBadRequest
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
+	resParams.ReqData = reqData
+
+	// normalize
+	reqData.Email = strings.TrimSpace(strings.ToLower(reqData.Email))
 	password := strings.TrimSpace(reqData.NewPassword)
-	reqData.Password = ""
-	if err := utils.Validate.Struct(&reqData); err != nil {
-		utils.MakeAPIResponse(w, r, http.StatusBadRequest, nil, "Invalid request body", true)
-		return
-	}
-
-	// hash password and clear it from request data so it is not sent to error logs
-	passHash, err := bcrypt.GenerateFromPassword([]byte(reqData.NewPassword), bcrypt.DefaultCost)
 	reqData.NewPassword = ""
+
+	if err := h.Validate.Struct(&reqData); err != nil {
+		resParams.Code = http.StatusBadRequest
+		resParams.Err = err
+		h.Res(resParams)
+		return
+	}
+
+	// check verification code
+	ok, err := utils.ValidateVerificationCode(h.RedisCli, ctx, reqData.Email, reqData.VerifCode)
 	if err != nil {
-		utils.LogErrorDiscord("ResetPassword", err, &reqData)
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
+		return
+	}
+	if !ok {
+		resParams.ResData = &struct {
+			InvalidCode bool `json:"invalidCode"`
+		}{InvalidCode: true}
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
-	redisKey := "email:reset:token:" + reqData.Email
-
-	// validate token by first checking if it exists in redis
-	redisToken, err := utils.RedisCli.Get(ctx, redisKey).Result()
-	if errors.Is(err, redis.Nil) { // if token not found (expired)
-		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Expired token", true)
-		return
-	} else if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("ResetPassword", err, &reqData)
-		}
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+	// hash password
+	passHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
-
-	// validate that token in redis is the same as one sent
-	if redisToken != reqData.Token {
-		utils.MakeAPIResponse(w, r, http.StatusForbidden, nil, "Invalid token", true)
-		return
-	}
-
-	usersCollection := utils.MongoDB.Collection("users")
 
 	// reset password
-	_, err = usersCollection.UpdateOne(ctx, bson.M{
-		"email": reqData.Email,
+	_, err = h.MongoDB.Collection("users").UpdateOne(ctx, bson.M{
+		"uid": reqData.Email,
 	}, bson.M{
 		"$set": bson.M{
 			"passHash": string(passHash),
 		},
 	})
 	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("ResetPassword", err, &reqData)
-		}
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
-	// delete token
-	_, err = utils.RedisCli.Del(ctx, redisKey).Result()
-	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("ResetPassword", err, &reqData)
-		}
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
-		return
-	}
-
-	utils.MakeAPIResponse(w, r, http.StatusOK, nil, "Success", false)
+	resParams.Code = http.StatusOK
+	h.Res(resParams)
 
 }

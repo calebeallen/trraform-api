@@ -17,12 +17,13 @@ import (
 )
 
 type Handler struct {
-	Logger       *zap.Logger
-	Validate     *validator.Validate
-	MongoDB      *mongo.Database
-	RedisClient  *redis.Client
-	AWSSESClient *ses.Client
-	R2Client     *s3.Client
+	Logger    *zap.Logger
+	Validate  *validator.Validate
+	HttpCli   *http.Client
+	MongoDB   *mongo.Database
+	RedisCli  *redis.Client
+	AWSSESCli *ses.Client
+	R2Cli     *s3.Client
 }
 
 type ResParams struct {

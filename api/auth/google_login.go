@@ -37,7 +37,7 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	resParams.ReqData = reqData
 
-	if err := utils.Validate.Struct(&reqData); err != nil {
+	if err := h.Validate.Struct(&reqData); err != nil {
 		resParams.Code = http.StatusBadRequest
 		resParams.Err = err
 		h.Res(resParams)
@@ -45,25 +45,14 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// validate google token
-	payload, err := idtoken.Validate(ctx, reqData.Token, os.Getenv("GOOGLE_CLIENT_ID"))
+	googleToken, err := idtoken.Validate(ctx, reqData.Token, os.Getenv("GOOGLE_CLIENT_ID"))
 	if err != nil {
 		resParams.Code = http.StatusForbidden
 		resParams.Err = err
 		h.Res(resParams)
 		return
 	}
-
-	googleId := payload.Claims["sub"].(string)
-	email, ok := payload.Claims["email"].(string)
-	if !ok || email == "" {
-		resParams.ResData = &struct {
-			EmailMissing bool `json:"emailMissing"`
-		}{EmailMissing: true}
-		resParams.Err = err
-		h.Res(resParams)
-		return
-	}
-	email = strings.ToLower(email)
+	googleId := googleToken.Claims["sub"].(string)
 
 	// find user
 	usersCollection := h.MongoDB.Collection("users")
@@ -75,11 +64,22 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	// create new user if none found
 	if errors.Is(err, mongo.ErrNoDocuments) {
 
+		// email must be provided
+		email, ok := googleToken.Claims["email"].(string)
+		if !ok || email == "" {
+			resParams.ResData = &struct {
+				EmailMissing bool `json:"emailMissing"`
+			}{EmailMissing: true}
+			resParams.Err = err
+			h.Res(resParams)
+			return
+		}
+
 		user = schemas.User{
 			Ctime:        time.Now().UTC(),
 			Username:     utils.NewUsername(),
 			GoogleId:     googleId,
-			Email:        email,
+			Email:        strings.ToLower(email),
 			PlotCredits:  1,
 			PlotIds:      []string{},
 			PurchasedIds: []string{},
@@ -104,7 +104,7 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// issue jwt
+	// create jwt
 	authToken := utils.CreateNewAuthToken(user.Id)
 	authTokenStr, err := authToken.Sign()
 	if err != nil {

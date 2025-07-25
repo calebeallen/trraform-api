@@ -41,18 +41,16 @@ func (h *Handler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 	password := strings.TrimSpace(reqData.Password)
 	reqData.Password = ""
 
-	if err := utils.Validate.Struct(&reqData); err != nil {
+	if err := h.Validate.Struct(&reqData); err != nil {
 		resParams.Code = http.StatusBadRequest
 		resParams.Err = err
 		h.Res(resParams)
 		return
 	}
 
-	usersCollection := h.MongoDB.Collection("users")
-
 	// find user
 	var user schemas.User
-	err := usersCollection.FindOne(ctx, bson.M{"email": reqData.Email}).Decode(&user)
+	err := h.MongoDB.Collection("users").FindOne(ctx, bson.M{"email": reqData.Email}).Decode(&user)
 	if errors.Is(err, mongo.ErrNoDocuments) || (err == nil && user.PassHash == "") { //doesn't exist, return
 		resParams.ResData = &struct {
 			CredentialError bool `json:"credentialError"`
@@ -69,8 +67,7 @@ func (h *Handler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check password
-	hash := []byte(user.PassHash)
-	if err := bcrypt.CompareHashAndPassword(hash, []byte(password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PassHash), []byte(password)); err != nil {
 		resParams.ResData = &struct {
 			CredentialError bool `json:"credentialError"`
 		}{CredentialError: true}
@@ -83,12 +80,8 @@ func (h *Handler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 	// check email verification
 	if !user.EmailVerified {
 		resParams.ResData = &struct {
-			Uid               string `json:"uid"`
-			NeedsVerification bool   `json:"needsVerification"`
-		}{
-			Uid:               user.Id.Hex(),
-			NeedsVerification: true,
-		}
+			NeedsVerification bool `json:"needsVerification"`
+		}{NeedsVerification: true}
 		resParams.Code = http.StatusForbidden
 		h.Res(resParams)
 		return

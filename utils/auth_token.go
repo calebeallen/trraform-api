@@ -1,11 +1,11 @@
 package utils
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
-	"os"
 	"strings"
 	"time"
+	"trraformapi/config"
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -19,7 +19,7 @@ type AuthToken struct {
 func CreateNewAuthToken(uid bson.ObjectID) *AuthToken {
 
 	token := AuthToken{Uid: uid.Hex()}
-	token.refresh()
+	token.refreshToken()
 	return &token
 
 }
@@ -28,27 +28,30 @@ func ValidateAuthToken(r *http.Request) (*AuthToken, error) {
 
 	header := r.Header.Get("Authorization")
 	if header == "" {
-		return nil, fmt.Errorf("in ParseAuthToken: missing token")
+		return nil, errors.New("missing token")
 	}
 
 	parts := strings.Split(header, " ")
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("in ParseAuthToken: invalid token format")
+		return nil, errors.New("invalid token format")
 	}
-	token := parts[1]
+	token_raw := parts[1]
 
 	// validate token
 	var authToken AuthToken
-	_, err := jwt.ParseWithClaims(token, &authToken, func(token *jwt.Token) (any, error) {
-		return []byte(os.Getenv("JWT_SECRET")), nil
+	token, err := jwt.ParseWithClaims(token_raw, &authToken, func(token *jwt.Token) (any, error) {
+		return []byte(config.ENV.JWT_SECRET), nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("in ParseAuthToken:\n%w", err)
+		return nil, err
+	}
+	if !token.Valid {
+		return nil, errors.New("invalid token")
 	}
 
 	// error if expired
 	if time.Now().UTC().After(authToken.ExpiresAt.Time) {
-		return nil, fmt.Errorf("in ParseAuthToken: token expired")
+		return nil, errors.New("token expired")
 	}
 
 	return &authToken, nil
@@ -58,37 +61,31 @@ func ValidateAuthToken(r *http.Request) (*AuthToken, error) {
 func (authToken *AuthToken) Sign() (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, authToken)
-	key := []byte(os.Getenv("JWT_SECRET"))
+	key := []byte(config.ENV.JWT_SECRET)
 	signed, err := token.SignedString(key)
 	if err != nil {
-		return "", fmt.Errorf("in writeToHeader:\n%w", err)
+		return "", err
 	}
 
 	return "Bearer " + signed, nil
 
 }
 
-func (authToken *AuthToken) GetUidObjectId() (*bson.ObjectID, error) {
-
-	objId, err := bson.ObjectIDFromHex(authToken.Uid)
-	if err != nil {
-		return nil, fmt.Errorf("in UidObjectID:\n%w", err)
-	}
-	return &objId, nil
-
+func (authToken *AuthToken) GetUidObjectId() (bson.ObjectID, error) {
+	return bson.ObjectIDFromHex(authToken.Uid)
 }
 
 func (authToken *AuthToken) Refresh() {
 
-	//if expiring in < 1 month refresh token
+	//if expiring in < 3 month refresh token
 	timeTillExpire := authToken.ExpiresAt.Sub(time.Now().UTC())
-	if timeTillExpire <= time.Hour*24*7*4 {
-		authToken.refresh()
+	if timeTillExpire <= time.Hour*24*7*4*3 {
+		authToken.refreshToken()
 	}
 
 }
 
-func (authToken *AuthToken) refresh() {
+func (authToken *AuthToken) refreshToken() {
 
 	now := time.Now().UTC()
 	authToken.RegisteredClaims = jwt.RegisteredClaims{
