@@ -1,5 +1,6 @@
 {
     "cSpell.words": [
+        "aquire",
         "AWSSES",
         "bson",
         "builddata",
@@ -15,11 +16,13 @@
         "petname",
         "plotid",
         "plotutils",
+        "readconcern",
         "readpref",
         "redns",
         "Trraform",
         "trraformapi",
         "updatechunk",
-        "vercode"
+        "vercode",
+        "writeconcern"
     ]
 }
