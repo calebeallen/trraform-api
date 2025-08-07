@@ -5,17 +5,22 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
-	"trraformapi/utils"
+
+	"github.com/redis/go-redis/v9"
 )
 
-func FlagPlotForUpdate(ctx context.Context, plotId *PlotId) error {
+func FlagPlotForUpdate(redisCli *redis.Client, ctx context.Context, plotId *PlotId) error {
 
 	plotIdStr := plotId.ToString()
 
-	err := utils.RedisCli.SAdd(ctx, "needsupdate:plotids", plotIdStr).Err()
+	// get chunk id from plot id
+	// check if chunk id set update entry already exists
+	// if it does, add chunk id to chunk update queue with priority 1
+	// add plot id to chunk id update set
+
+	err := redisCli.SAdd(ctx, "update:plotids", plotIdStr).Err()
 	if err != nil {
-		return fmt.Errorf("in FlagPlotForUpdate:\n%w", err)
+		return err
 	}
 
 	return nil

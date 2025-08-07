@@ -9,7 +9,6 @@ import (
 	"trraformapi/internal/api"
 	"trraformapi/internal/api/auth"
 	"trraformapi/internal/api/leaderboard"
-	"trraformapi/internal/api/payment"
 	"trraformapi/internal/api/plot"
 	"trraformapi/internal/api/user"
 
@@ -127,6 +126,8 @@ func main() {
 	router.Use(middleware.RequestSize(1 << 20))
 
 	authH := &auth.Handler{Handler: h}
+	userH := &user.Handler{Handler: h}
+	plotH := &plot.Handler{Handler: h}
 	leaderboardH := &leaderboard.Handler{Handler: h}
 	// paymentsH := &payments.Handler{Handler: deps}
 
@@ -138,24 +139,23 @@ func main() {
 	router.Post("/auth/reset-password", authH.ResetPassword)
 
 	// user endpoints
-	router.Get("/user", user.GetUserData)
-	router.Post("/user/change-username", user.ChangeUsername)
+	router.Get("/user", userH.GetUserData)
+	router.Post("/user/change-username", h.AuthMiddleware(userH.ChangeUsername))
 
 	// plot endpoints
-	router.Post("/plot/claim-with-credit", plot.ClaimWithCredit)
-	router.Post("/plot/update", plot.UpdatePlot)
-	router.Get("/plot/open", plot.GetOpenPlot)
+	router.Post("/plot/claim-with-credit", h.AuthMiddleware(plotH.ClaimWithCredit))
+	router.Post("/plot/update", h.AuthMiddleware(plotH.UpdatePlot))
 
 	// leaderboard endpoints
 	router.Get("/leaderboard", leaderboardH.GetLeaderboard)
 	router.Post("/leaderboard/vote", leaderboardH.Vote)
 
 	// payment endpoints
-	router.Get("/payment/intent/details", payment.GetPaymentIntentDetails)
-	router.Post("/payment/intent", payment.CreatePaymentIntent)
-	router.Post("/payment/subscription/create", payment.CreateSubscription)
-	router.Post("/payment/subscription/update", payment.UpdateSubscription)
-	router.Post("/payment/stripe-webhook", payment.StripeWebhook)
+	// router.Get("/payment/intent/details", payment.GetPaymentIntentDetails)
+	// router.Post("/payment/intent", payment.CreatePaymentIntent)
+	// router.Post("/payment/subscription/create", payment.CreateSubscription)
+	// router.Post("/payment/subscription/update", payment.UpdateSubscription)
+	// router.Post("/payment/stripe-webhook", payment.StripeWebhook)
 
 	logger.Info("Server running on port 8080")
 	http.ListenAndServe(":8080", router)

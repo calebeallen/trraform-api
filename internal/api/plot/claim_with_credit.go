@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 	"trraformapi/internal/api"
@@ -133,7 +132,7 @@ func (h *Handler) ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// flag for update
-	if err := plotutils.FlagPlotForUpdate(ctx, plotId); err != nil {
+	if err := plotutils.FlagPlotForUpdate(h.RedisCli, ctx, plotId); err != nil {
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
 		h.Res(resParams)
@@ -142,14 +141,6 @@ func (h *Handler) ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 
 	// remove plotId from available plots
 	depth := plotId.Depth()
-	err = h.RedisCli.SRem(ctx, fmt.Sprintf("openplots:%d", depth), plotIdStr).Err()
-	if err != nil {
-		resParams.Code = http.StatusInternalServerError
-		resParams.Err = err
-		h.Res(resParams)
-		return
-	}
-
 	// add plot's children (if it has any) to available plots
 	if depth < config.VAR.MAX_DEPTH {
 
@@ -157,14 +148,6 @@ func (h *Handler) ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 		for i := 0; i < config.VAR.SUBPLOT_COUNT; i++ {
 			childId := plotutils.CreateSubplotId(plotId, uint64(i+1))
 			childIds[i] = childId.ToString()
-		}
-
-		err = h.RedisCli.SAdd(ctx, fmt.Sprintf("openplots:%d", depth+1), childIds...).Err()
-		if err != nil {
-			resParams.Code = http.StatusInternalServerError
-			resParams.Err = err
-			h.Res(resParams)
-			return
 		}
 
 	}
