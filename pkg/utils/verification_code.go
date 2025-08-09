@@ -45,7 +45,7 @@ func NewVerificationCode(redisCli *redis.Client, ctx context.Context, email stri
 
 }
 
-func GetVerificationCodeByUid(redisCli *redis.Client, ctx context.Context, email string) (string, error) {
+func GetVerificationCode(redisCli *redis.Client, ctx context.Context, email string) (string, error) {
 
 	key := "vercode:" + email
 	code, err := redisCli.Get(ctx, key).Result()
@@ -61,7 +61,6 @@ func GetVerificationCodeByUid(redisCli *redis.Client, ctx context.Context, email
 }
 
 func ValidateVerificationCode(redisCli *redis.Client, ctx context.Context, email string, code string) (bool, error) {
-
 	key := "vercode:" + email
 
 	res, err := validateScript.Run(ctx, redisCli, []string{key}, code).Int()
@@ -73,5 +72,4 @@ func ValidateVerificationCode(redisCli *redis.Client, ctx context.Context, email
 	}
 
 	return false, nil
-
 }

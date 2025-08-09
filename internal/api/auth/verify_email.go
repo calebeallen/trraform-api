@@ -45,7 +45,7 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO check verification code then delete it!
+	// check code
 	ok, err := utils.ValidateVerificationCode(h.RedisCli, ctx, reqData.Email, reqData.VerifCode)
 	if err != nil {
 		resParams.Code = http.StatusInternalServerError
