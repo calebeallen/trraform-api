@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 	"trraformapi/internal/api"
-	"trraformapi/pkg/config"
 	plotutils "trraformapi/pkg/plot_utils"
 	"trraformapi/pkg/schemas"
 
@@ -131,25 +130,11 @@ func (h *Handler) ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// flag for update
-	if err := plotutils.FlagPlotForUpdate(h.RedisCli, ctx, plotId); err != nil {
+	if err := plotutils.SetDefaultPlot(h.RedisCli, h.R2Cli, ctx, plotId, &updatedUser); err != nil {
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
 		h.Res(resParams)
 		return
-	}
-
-	// remove plotId from available plots
-	depth := plotId.Depth()
-	// add plot's children (if it has any) to available plots
-	if depth < config.VAR.MAX_DEPTH {
-
-		childIds := make([]any, config.VAR.SUBPLOT_COUNT)
-		for i := 0; i < config.VAR.SUBPLOT_COUNT; i++ {
-			childId := plotutils.CreateSubplotId(plotId, uint64(i+1))
-			childIds[i] = childId.ToString()
-		}
-
 	}
 
 	resParams.Code = http.StatusOK

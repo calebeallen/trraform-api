@@ -7,14 +7,28 @@ import (
 	"github.com/joho/godotenv"
 )
 
-type vars struct {
+const (
+	CF_ZONE_ID       = "64097c6d2cf0e0810ca05cdf8d4d1273"
+	CF_ACCOUNT_ID    = "1534f5e1cce37d41a018df4c9716751e"
+	CF_PLOT_BUCKET   = "plots-dev"
+	GOOGLE_CLIENT_ID = "505214281747-g26m4g2lv692ff819neq6pbus4q6f36f.apps.googleusercontent.com"
+	ORIGIN           = "http://localhost:5173"
+	MONGO_DB         = "TrraformDev"
+	MAX_COLOR_IDX    = 30649
+	DEP0_PLOT_COUNT  = 34998
+	SUBPLOT_COUNT    = 24
+	MAX_DEPTH        = 2
+	CHUNK_SIZE       = 6
+	STD_BUILD_SIZE   = 48
+	LRG_BUILD_SIZE   = 72
+	MIN_BUILD_SIZE   = 6
+)
+
+type EnvVars struct {
 	CF_TURNSTILE_SECRET_KEY string
 	CF_R2_ACCESS_KEY        string
 	CF_R2_SECRET_KEY        string
-	CF_ZONE_ID              string
 	CF_API_TOKEN            string
-	CF_ACCOUNT_ID           string
-	GOOGLE_CLIENT_ID        string
 	AWS_ACCESS_KEY_ID       string
 	AWS_SECRET_ACCESS_KEY   string
 	MONGO_PASSWORD          string
@@ -22,18 +36,9 @@ type vars struct {
 	JWT_SECRET              string
 	STRIPE_SECRET_KEY       string
 	STRIPE_WEBHOOK_SECRET   string
-	ORIGIN                  string
-	MAX_COLOR_IDX           int
-	DEP0_PLOT_COUNT         int
-	SUBPLOT_COUNT           int
-	MAX_DEPTH               int
-	CHUNK_SIZE              int
-	STD_BUILD_SIZE          int
-	LRG_BUILD_SIZE          int
-	MIN_BUILD_SIZE          int
 }
 
-var VAR *vars
+var ENV *EnvVars
 
 func init() {
 
@@ -47,15 +52,7 @@ func init() {
 		}
 	}
 
-	var origin string
-	if prod {
-		origin = "https://trraform.com"
-	} else {
-		origin = "http://localhost:5137"
-	}
-
-	VAR = &vars{
-		// sensitive
+	ENV = &EnvVars{
 		CF_TURNSTILE_SECRET_KEY: os.Getenv("CF_TURNSTILE_SECRET_KEY"),
 		CF_R2_ACCESS_KEY:        os.Getenv("CF_R2_ACCESS_KEY"),
 		CF_R2_SECRET_KEY:        os.Getenv("CF_R2_SECRET_KEY"),
@@ -67,22 +64,6 @@ func init() {
 		JWT_SECRET:              os.Getenv("JWT_SECRET"),
 		STRIPE_SECRET_KEY:       os.Getenv("STRIPE_SECRET_KEY"),
 		STRIPE_WEBHOOK_SECRET:   os.Getenv("STRIPE_WEBHOOK_SECRET"),
-
-		// non-sensitive
-		CF_ZONE_ID:       "64097c6d2cf0e0810ca05cdf8d4d1273",
-		CF_ACCOUNT_ID:    "1534f5e1cce37d41a018df4c9716751e",
-		GOOGLE_CLIENT_ID: "505214281747-g26m4g2lv692ff819neq6pbus4q6f36f.apps.googleusercontent.com",
-
-		// other
-		ORIGIN:          origin,
-		MAX_COLOR_IDX:   30649,
-		DEP0_PLOT_COUNT: 34998,
-		SUBPLOT_COUNT:   24,
-		MAX_DEPTH:       2,
-		CHUNK_SIZE:      6,
-		STD_BUILD_SIZE:  48,
-		LRG_BUILD_SIZE:  72,
-		MIN_BUILD_SIZE:  6,
 	}
 
 }

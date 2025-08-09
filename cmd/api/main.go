@@ -11,9 +11,11 @@ import (
 	"trraformapi/internal/api/leaderboard"
 	"trraformapi/internal/api/plot"
 	"trraformapi/internal/api/user"
+	"trraformapi/pkg/config"
+	plotutils "trraformapi/pkg/plot_utils"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
@@ -62,13 +64,17 @@ func main() {
 		return re.MatchString(password)
 	})
 
+	h.Validate.RegisterValidation("plotid", plotutils.PlotIdValidator)
+	h.Validate.RegisterValidation("maxgraphemes", plotutils.MaxGraphemesValidator)
+	h.Validate.RegisterValidation("builddata", plotutils.BuildDataValidator)
+
 	h.HttpCli = &http.Client{
 		Timeout: 30 * time.Second,
 	}
 
 	// init mongo
 	mongoServerAPI := options.ServerAPI(options.ServerAPIVersion1)
-	mongoOpts := options.Client().ApplyURI("mongodb+srv://caleballen:" + os.Getenv("MONGO_PASSWORD") + "@trraform.cenuh0o.mongodb.net/?retryWrites=true&w=majority&appName=Trraform").SetServerAPIOptions(mongoServerAPI)
+	mongoOpts := options.Client().ApplyURI("mongodb+srv://caleballen:" + config.ENV.MONGO_PASSWORD + "@trraform.cenuh0o.mongodb.net/?retryWrites=true&w=majority&appName=Trraform").SetServerAPIOptions(mongoServerAPI)
 	mongoCli, err := mongo.Connect(mongoOpts)
 	if err != nil {
 		panic(err)
@@ -81,18 +87,18 @@ func main() {
 	if err := mongoCli.Ping(ctx, readpref.Primary()); err != nil {
 		panic(err)
 	}
-	h.MongoDB = mongoCli.Database("Trraform")
+	h.MongoDB = mongoCli.Database(config.MONGO_DB)
 
 	// init redis
 	h.RedisCli = redis.NewClient(&redis.Options{
 		Addr:     "redis-16216.c15.us-east-1-4.ec2.redns.redis-cloud.com:16216",
 		Username: "default",
-		Password: os.Getenv("REDIS_PASSWORD"),
+		Password: config.ENV.REDIS_PASSWORD,
 		DB:       0,
 	})
 
 	// init aws ses
-	sesCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	sesCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
 	if err != nil {
 		panic(err)
 	}
@@ -100,8 +106,8 @@ func main() {
 
 	// init s3
 	cred := credentials.NewStaticCredentialsProvider(
-		os.Getenv("CF_R2_ACCESS_KEY"),
-		os.Getenv("CF_R2_SECRET_KEY"),
+		config.ENV.CF_R2_ACCESS_KEY,
+		config.ENV.CF_R2_SECRET_KEY,
 		"",
 	)
 	h.R2Cli = s3.New(s3.Options{
@@ -118,7 +124,7 @@ func main() {
 
 	// Middleware
 	router.Use(cors.Handler(cors.Options{
-		AllowedOrigins: []string{"http://localhost:5173", "https://trraform.com"},
+		AllowedOrigins: []string{config.ORIGIN},
 		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders: []string{"Content-Type", "Authorization"},
 	}))
@@ -135,6 +141,7 @@ func main() {
 	router.Post("/auth/create-account", authH.CreateAccount)
 	router.Post("/auth/password-login", authH.PasswordLogin)
 	router.Post("/auth/google-login", authH.GoogleLogin)
+	router.Post("/auth/send-verification-code", authH.SendVerificationCode)
 	router.Post("/auth/verify-email", authH.VerifyEmail)
 	router.Post("/auth/reset-password", authH.ResetPassword)
 

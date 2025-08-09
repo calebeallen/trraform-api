@@ -34,12 +34,10 @@ func (h *Handler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		h.Res(resParams)
 		return
 	}
-	resParams.ReqData = reqData
 
 	// normalize
 	reqData.Email = strings.TrimSpace(strings.ToLower(reqData.Email))
-	password := strings.TrimSpace(reqData.Password)
-	reqData.Password = ""
+	reqData.Password = strings.TrimSpace(reqData.Password)
 
 	if err := h.Validate.Struct(&reqData); err != nil {
 		resParams.Code = http.StatusBadRequest
@@ -47,6 +45,9 @@ func (h *Handler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		h.Res(resParams)
 		return
 	}
+	password := reqData.Password
+	reqData.Password = ""
+	resParams.ReqData = reqData
 
 	// find user
 	var user schemas.User

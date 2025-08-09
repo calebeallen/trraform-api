@@ -11,7 +11,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var ErrUnusedVerificationCode = errors.New("attempted to create a verification code when an unused valid code already exists.")
+var ErrUnusedVerificationCode = errors.New("attempted to create a verification code when an unused valid code already exists")
 var ErrVerificationCodeNotFound = errors.New("verification code not found")
 
 var validateScript = redis.NewScript(`

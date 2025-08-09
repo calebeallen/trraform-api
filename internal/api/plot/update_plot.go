@@ -2,16 +2,16 @@ package plot
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
+	"strconv"
 	"trraformapi/internal/api"
-	"trraformapi/utils"
-	plotutils "trraformapi/utils/plot_utils"
-	"trraformapi/utils/schemas"
+	"trraformapi/pkg/config"
+	plotutils "trraformapi/pkg/plot_utils"
+	"trraformapi/pkg/schemas"
+	"trraformapi/pkg/utils"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -25,7 +25,7 @@ func (h *Handler) UpdatePlot(w http.ResponseWriter, r *http.Request) {
 	resParams := &api.ResParams{W: w, R: r}
 
 	var reqData struct {
-		PlotId      string `json:"plotId" validate:"required"`
+		PlotId      string `json:"plotId" validate:"required,plotid"`
 		Name        string `json:"name"`
 		Description string `json:"description"`
 		Link        string `json:"link"`
@@ -52,12 +52,6 @@ func (h *Handler) UpdatePlot(w http.ResponseWriter, r *http.Request) {
 
 	// validate plot id
 	plotId, err := plotutils.PlotIdFromHexString(reqData.PlotId)
-	if err != nil || !plotId.Validate() {
-		resParams.Code = http.StatusBadRequest
-		resParams.Err = err
-		h.Res(resParams)
-		return
-	}
 	plotIdStr := plotId.ToString()
 
 	// decode base64 buildData
@@ -97,7 +91,7 @@ func (h *Handler) UpdatePlot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// validate plot data
-	if err := utils.Validate.Struct(&plotData); err != nil {
+	if err := h.Validate.Struct(&plotData); err != nil {
 		resParams.Code = http.StatusBadRequest
 		resParams.Err = err
 		h.Res(resParams)
@@ -107,7 +101,7 @@ func (h *Handler) UpdatePlot(w http.ResponseWriter, r *http.Request) {
 	// check that plot is within build size constraints for subscription status
 	// link and large build size only allowed for subscribed users
 	buildSize := buildData[1]
-	if buildSize < utils.MinBuildSize || buildSize > utils.BuildSizeLarge || (!user.Subscription.IsActive && (plotData.Link != "" || plotData.LinkTitle != "" || buildSize > utils.BuildSizeStd)) {
+	if buildSize < config.MIN_BUILD_SIZE || buildSize > config.LRG_BUILD_SIZE || (!user.Subscription.IsActive && (plotData.Link != "" || plotData.LinkTitle != "" || buildSize > config.STD_BUILD_SIZE)) {
 		resParams.Code = http.StatusUnauthorized
 		resParams.Err = err
 		h.Res(resParams)
@@ -124,27 +118,22 @@ func (h *Handler) UpdatePlot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// upload plot data
-	err = utils.PutObjectR2(ctx, "plots", plotIdStr+".dat", bytes.NewReader(plotDataBytes), "application/octet-stream")
-	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("UpdatePlot", err, &reqData)
-		}
-		log.Printf("Error uploading plot data:\n%v", err)
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+	metadata := map[string]string{"verified": strconv.FormatBool(user.Subscription.IsActive)}
+	if err := utils.PutObjectR2(h.R2Cli, ctx, config.CF_PLOT_BUCKET, plotIdStr+".dat", bytes.NewReader(plotDataBytes), "application/octet-stream", metadata); err != nil {
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
-	// flag chunk for update
-	err = plotutils.FlagPlotForUpdate(ctx, plotId)
-	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			utils.LogErrorDiscord("UpdatePlot", err, &reqData)
-		}
-		log.Printf("Error flagging chunk for update:\n%v", err)
-		utils.MakeAPIResponse(w, r, http.StatusInternalServerError, nil, "Internal server error", true)
+	if err := plotutils.FlagPlotForUpdate(h.RedisCli, ctx, plotId); err != nil {
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
 		return
 	}
 
-	utils.MakeAPIResponse(w, r, http.StatusOK, nil, "Success", false)
+	resParams.Code = http.StatusOK
+	h.Res(resParams)
 
 }

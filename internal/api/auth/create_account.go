@@ -36,12 +36,10 @@ func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		h.Res(resParams)
 		return
 	}
-	resParams.ReqData = reqData
 
 	// normalize
 	reqData.Email = strings.TrimSpace(strings.ToLower(reqData.Email))
-	password := strings.TrimSpace(reqData.Password)
-	reqData.Password = ""
+	reqData.Password = strings.TrimSpace(reqData.Password)
 
 	if err := h.Validate.Struct(&reqData); err != nil {
 		resParams.Code = http.StatusBadRequest
@@ -49,6 +47,9 @@ func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		h.Res(resParams)
 		return
 	}
+	password := reqData.Password
+	reqData.Password = ""
+	resParams.ReqData = reqData
 
 	// hash password
 	passHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -82,8 +83,12 @@ func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		Offenses:     []schemas.Offense{},
 	}
 
+	// unique index by email
 	if _, err := h.MongoDB.Collection("users").InsertOne(ctx, newUser); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
+			resParams.ResData = &struct {
+				EmailConflict bool `json:"emailConflict"`
+			}{EmailConflict: true}
 			resParams.Code = http.StatusConflict
 		} else {
 			resParams.Code = http.StatusInternalServerError

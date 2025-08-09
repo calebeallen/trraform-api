@@ -40,7 +40,7 @@ func ValidateAuthToken(r *http.Request) (*AuthToken, error) {
 	// validate token
 	var authToken AuthToken
 	token, err := jwt.ParseWithClaims(token_raw, &authToken, func(token *jwt.Token) (any, error) {
-		return []byte(config.VAR.JWT_SECRET), nil
+		return []byte(config.ENV.JWT_SECRET), nil
 	})
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func ValidateAuthToken(r *http.Request) (*AuthToken, error) {
 func (authToken *AuthToken) Sign() (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, authToken)
-	key := []byte(config.VAR.JWT_SECRET)
+	key := []byte(config.ENV.JWT_SECRET)
 	signed, err := token.SignedString(key)
 	if err != nil {
 		return "", err

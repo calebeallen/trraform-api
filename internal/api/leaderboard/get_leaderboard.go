@@ -36,7 +36,8 @@ func (h *Handler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resParams.ResData = leaderboard
+	resParams.Code = http.StatusOK
 	h.Res(resParams)
-	return
 
 }

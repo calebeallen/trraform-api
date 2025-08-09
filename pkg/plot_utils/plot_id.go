@@ -1,14 +1,16 @@
 package plotutils
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
-	"trraformapi/utils"
+	"trraformapi/pkg/config"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/redis/go-redis/v9"
 )
 
 type PlotId struct {
@@ -34,16 +36,33 @@ func init() {
 
 	}
 
-	utils.Validate.RegisterValidation("plotid", func(fl validator.FieldLevel) bool {
+}
 
-		plotId, err := PlotIdFromHexString(fl.Field().String())
-		if err != nil {
-			return false
-		}
+func PlotIdValidator(fl validator.FieldLevel) bool {
 
-		return plotId.Validate()
+	plotId, err := PlotIdFromHexString(fl.Field().String())
+	if err != nil {
+		return false
+	}
+	return plotId.Validate()
 
-	})
+}
+
+func FlagPlotForUpdate(redisCli *redis.Client, ctx context.Context, plotId *PlotId) error {
+
+	plotIdStr := plotId.ToString()
+
+	// get chunk id from plot id
+	// check if chunk id set update entry already exists
+	// if it does, add chunk id to chunk update queue with priority 1
+	// add plot id to chunk id update set
+
+	err := redisCli.SAdd(ctx, "update:plotids", plotIdStr).Err()
+	if err != nil {
+		return err
+	}
+
+	return nil
 
 }
 
@@ -101,7 +120,7 @@ func (plotId *PlotId) Validate() bool {
 	idCopy := plotId.Id
 	localId := idCopy & 0xffffff
 
-	if localId == 0 || localId > utils.Depth0Count {
+	if localId == 0 || localId > config.DEP0_PLOT_COUNT {
 		return false
 	}
 
@@ -110,7 +129,7 @@ func (plotId *PlotId) Validate() bool {
 	for depth := 0; idCopy > 0 && depth < 2; depth++ {
 
 		localId = idCopy & 0xfff
-		if localId == 0 || localId > utils.SubplotCount {
+		if localId == 0 || localId > config.SUBPLOT_COUNT {
 			return false
 		}
 		idCopy >>= 12
@@ -157,7 +176,7 @@ func (plotId *PlotId) GetChunkId() string {
 
 	parentId := plotId.GetParent()
 	split := plotId.Split()
-	chunkId := (split[len(split)-1] - 1) / utils.ChunkSize
+	chunkId := (split[len(split)-1] - 1) / config.CHUNK_SIZE
 
 	return fmt.Sprintf("%s_%x", parentId.ToString(), chunkId)
 

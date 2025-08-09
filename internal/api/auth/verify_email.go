@@ -45,7 +45,7 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// check verification code
+	// TODO check verification code then delete it!
 	ok, err := utils.ValidateVerificationCode(h.RedisCli, ctx, reqData.Email, reqData.VerifCode)
 	if err != nil {
 		resParams.Code = http.StatusInternalServerError
@@ -57,7 +57,7 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		resParams.ResData = &struct {
 			InvalidCode bool `json:"invalidCode"`
 		}{InvalidCode: true}
-		resParams.Code = http.StatusInternalServerError
+		resParams.Code = http.StatusUnauthorized
 		resParams.Err = err
 		h.Res(resParams)
 		return
@@ -65,7 +65,7 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 
 	// set account to verified
 	var updatedUser schemas.User
-	err = h.MongoDB.Collection("").FindOneAndUpdate(ctx,
+	err = h.MongoDB.Collection("users").FindOneAndUpdate(ctx,
 		bson.M{"email": reqData.Email},
 		bson.M{"$set": bson.M{"emailVerified": true}},
 		options.FindOneAndUpdate().SetReturnDocument(options.After),

@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"trraformapi/utils"
+	"trraformapi/pkg/config"
+	"trraformapi/pkg/utils"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/rivo/uniseg"
@@ -16,7 +17,6 @@ type PlotData struct {
 	Description string `validate:"maxgraphemes=128"`
 	Link        string `validate:"maxgraphemes=256"`
 	LinkTitle   string `validate:"maxgraphemes=48"`
-	Verified    bool
 	Owner       string
 	BuildData   []uint16 `validate:"builddata"`
 }
@@ -28,102 +28,84 @@ type plotDataJsonPart struct {
 	Link        string `json:"link"`
 	LinkTitle   string `json:"linkTitle"`
 	Owner       string `json:"owner"`
-	Verified    bool   `json:"verified"`
 }
 
-func init() {
+func MaxGraphemesValidator(fl validator.FieldLevel) bool {
+	param := fl.Param()
+	maxLength, err := strconv.Atoi(param)
+	if err != nil {
+		return false
+	}
 
-	utils.Validate.RegisterValidation("maxgraphemes", func(fl validator.FieldLevel) bool {
-
-		param := fl.Param()
-		maxLength, err := strconv.Atoi(param)
-		if err != nil {
+	field := fl.Field().String()
+	gr := uniseg.NewGraphemes(field)
+	count := 0
+	for gr.Next() {
+		count++
+		if count > maxLength {
 			return false
 		}
+	}
 
-		field := fl.Field().String()
-		gr := uniseg.NewGraphemes(field)
-		count := 0
-		for gr.Next() {
-			count++
-			if count > maxLength {
+	return true
+}
+
+func BuildDataValidator(fl validator.FieldLevel) bool {
+
+	data, ok := fl.Field().Interface().([]uint16)
+	if !ok {
+		return false
+	}
+
+	// must contain at least 2 values (version, build size)
+	if len(data) < 2 {
+		return false
+	}
+
+	_, bs := data[0], int(data[1])
+	bs3 := bs * bs * bs
+
+	// create array to track subplots
+	var subplotsUsed [config.SUBPLOT_COUNT]bool
+	for i := range subplotsUsed {
+		subplotsUsed[i] = false
+	}
+
+	data = data[2:]
+	blkCnt := 0
+
+	// check that each block is valid, count blocks
+	for i := range data {
+		write, val := data[i]&1, data[i]>>1
+		if write == 1 {
+			if val > config.MAX_COLOR_IDX {
 				return false
 			}
-		}
-
-		return true
-
-	})
-
-	utils.Validate.RegisterValidation("builddata", func(fl validator.FieldLevel) bool {
-
-		data, ok := fl.Field().Interface().([]uint16)
-		if !ok {
-			return false
-		}
-
-		// must contain at least 2 values (version, build size)
-		if len(data) < 2 {
-			return false
-		}
-
-		_, bs := data[0], int(data[1])
-		bs3 := bs * bs * bs
-
-		// create array to track subplots
-		var subplotsUsed [utils.SubplotCount]bool
-		for i := range subplotsUsed {
-			subplotsUsed[i] = false
-		}
-
-		data = data[2:]
-		blkCnt := 0
-
-		// check that each block is valid, count blocks
-		for i := range data {
-
-			write, val := data[i]&1, data[i]>>1
-
-			if write == 1 {
-
-				if val > utils.MaxColorIndex {
+			//if subplot
+			if val > 0 && val <= config.SUBPLOT_COUNT {
+				// if subplot is already placed, it can't be placed again
+				if subplotsUsed[val-1] {
 					return false
 				}
 
-				//if subplot
-				if val > 0 && val <= utils.SubplotCount {
-
-					// if subplot is already placed, it can't be placed again
-					if subplotsUsed[val-1] {
-						return false
-					}
-
-					// next value must not be a repeat type
-					if i+1 < len(data) && data[i+1]&1 == 0 {
-						return false
-					}
-
-					subplotsUsed[val-1] = true
-
+				// next value must not be a repeat type
+				if i+1 < len(data) && data[i+1]&1 == 0 {
+					return false
 				}
 
-				blkCnt++
-
-			} else {
-				blkCnt += int(val)
+				subplotsUsed[val-1] = true
 			}
-
-			// terminate if block count exceeds bs^3
-			if blkCnt > bs3 {
-				return false
-			}
-
+			blkCnt++
+		} else {
+			blkCnt += int(val)
 		}
+		// terminate if block count exceeds bs^3
+		if blkCnt > bs3 {
+			return false
+		}
+	}
 
-		return true
-
-	})
-
+	return true
 }
 
 func Decode(data []byte) (*PlotData, error) {
@@ -172,7 +154,6 @@ func Decode(data []byte) (*PlotData, error) {
 		Description: jsonData.Description,
 		Link:        jsonData.Link,
 		LinkTitle:   jsonData.LinkTitle,
-		Verified:    jsonData.Verified,
 		Owner:       jsonData.Owner,
 		BuildData:   buildData,
 	}
@@ -190,7 +171,6 @@ func (plotData *PlotData) Encode() ([]byte, error) {
 		Link:        plotData.Link,
 		LinkTitle:   plotData.LinkTitle,
 		Owner:       plotData.Owner,
-		Verified:    plotData.Verified,
 	}
 
 	// Convert the struct to JSON bytes

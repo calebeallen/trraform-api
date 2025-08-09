@@ -20,7 +20,7 @@ import (
 func ValidateTurnstileToken(httpCli *http.Client, ctx context.Context, token string) error {
 
 	formData := url.Values{}
-	formData.Set("secret", config.VAR.CF_TURNSTILE_SECRET_KEY)
+	formData.Set("secret", config.ENV.CF_TURNSTILE_SECRET_KEY)
 	formData.Set("response", token)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://challenges.cloudflare.com/turnstile/v0/siteverify", strings.NewReader(formData.Encode()))
@@ -89,12 +89,13 @@ func PutObjectR2(r2Cli *s3.Client, ctx context.Context, bucket string, key strin
 
 }
 
-func UpdateMetadataR2(r2Cli *s3.Client, ctx context.Context, bucket string, key string, metadata map[string]string) error {
+func UpdateMetadataR2(r2Cli *s3.Client, ctx context.Context, bucket string, key string, contentType string, metadata map[string]string) error {
 
 	_, err := r2Cli.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:            aws.String(bucket),
 		CopySource:        aws.String(bucket + "/" + key),
 		Key:               aws.String(key),
+		ContentType:       aws.String(contentType),
 		Metadata:          metadata,
 		MetadataDirective: types.MetadataDirectiveReplace, // IMPORTANT
 	})
@@ -144,7 +145,7 @@ func PurgeCacheCDN(httpCli *http.Client, ctx context.Context, urls []string) err
 		payload.Files[i] = File{
 			Url: url,
 			Headers: Headers{
-				Origin: config.VAR.ORIGIN,
+				Origin: config.ORIGIN,
 			},
 		}
 	}
@@ -153,13 +154,13 @@ func PurgeCacheCDN(httpCli *http.Client, ctx context.Context, urls []string) err
 		return err
 	}
 
-	apiUrl := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/purge_cache", config.VAR.CF_ZONE_ID)
+	apiUrl := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/purge_cache", config.CF_ZONE_ID)
 	req, err := http.NewRequestWithContext(ctx, "POST", apiUrl, bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return err
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.VAR.CF_API_TOKEN))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.ENV.CF_API_TOKEN))
 	req.Header.Set("Content-Type", "application/json")
 
 	res, err := httpCli.Do(req)

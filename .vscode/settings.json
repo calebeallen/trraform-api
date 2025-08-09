@@ -10,6 +10,7 @@
         "errgroup",
         "errmsg",
         "idtoken",
+        "ipairs",
         "maxgraphemes",
         "needsupdate",
         "openplots",

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Verification Code</title>
+  <style>
+    @media (max-width: 600px) {
+      .container { width: 100% !important; }
+      .stack, .stack td { display: block !important; width: 100% !important; }
+      .pad-sm { padding: 16px !important; }
+      .right-img { height: 180px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background:#141416;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;">
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#141416;">
+    <tr>
+      <td align="center" style="padding:24px;">
+
+        <!-- Main container -->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="520" class="container" style="width:520px;max-width:100%;background:#18181b;border-radius:14px;overflow:hidden;">
+          <tr>
+            <td class="pad-sm" style="padding:18px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="stack">
+                <tr>
+                  <!-- Left: centered block with left-aligned text -->
+                  <td valign="middle" style="width:50%;padding-right:12px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="width:auto;max-width:100%;">
+                      <tr>
+                        <td style="text-align:left;color:#e4e4e4;">
+                          <div style="font-size:18px;line-height:24px;color:#cfcfd2;margin:0 0 12px 0;">
+                            Your verification code is
+                          </div>
+                          <div style="font-size:40px;line-height:44px;font-weight:700;color:#ffffff;letter-spacing:6px;margin:0 0 14px 0;">
+                            {{.Code}}
+                          </div>
+                          <div style="font-size:13px;line-height:18px;color:#cfcfd2;margin:0;">
+                            This code expires in 30 minutes.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+
+                  <!-- Right: image -->
+                  <td valign="middle" style="width:50%;padding-left:12px;">
+                    <img
+                      src="https://trraform.com/cactus.png"
+                      width="100%"
+                      alt="Verification"
+                      class="right-img"
+                      style="display:block;width:100%;height:100%;max-height:260px;border:0;outline:0;text-decoration:none;object-fit:cover;border-radius:10px;background:#2a2a2a;"
+                    />
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Footer -->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="520" class="container" style="width:520px;max-width:100%;margin-top:12px;">
+          <tr>
+            <td align="center" style="padding:12px 8px;color:#9a9a9a;font-size:12px;line-height:16px;font-family:Arial,Helvetica,sans-serif;">
+              Trraform &copy; 2025
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>
