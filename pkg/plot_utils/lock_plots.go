@@ -64,11 +64,11 @@ func LockPlots(redisCli *redis.Client, ctx context.Context, plotIds []string, ow
 	if err != nil {
 		return nil, err
 	}
-	out := res.([]interface{})
+	out := res.([]any)
 	ok := out[0].(int64)
 	if ok == 0 {
 
-		raw := out[1].([]interface{})
+		raw := out[1].([]any)
 		failed := make([]string, len(raw))
 		for i, v := range raw {
 			failed[i] = v.(string)

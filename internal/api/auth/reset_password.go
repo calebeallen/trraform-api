@@ -33,12 +33,9 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		h.Res(resParams)
 		return
 	}
-	resParams.ReqData = reqData
 
-	// normalize
 	reqData.Email = strings.TrimSpace(strings.ToLower(reqData.Email))
-	password := strings.TrimSpace(reqData.NewPassword)
-	reqData.NewPassword = ""
+	reqData.NewPassword = strings.TrimSpace(reqData.NewPassword)
 
 	if err := h.Validate.Struct(&reqData); err != nil {
 		resParams.Code = http.StatusBadRequest
@@ -46,6 +43,9 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		h.Res(resParams)
 		return
 	}
+	password := reqData.NewPassword
+	reqData.NewPassword = ""
+	resParams.ReqData = reqData
 
 	// check verification code
 	ok, err := utils.ValidateVerificationCode(h.RedisCli, ctx, reqData.Email, reqData.VerifCode)
@@ -59,7 +59,7 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		resParams.ResData = &struct {
 			InvalidCode bool `json:"invalidCode"`
 		}{InvalidCode: true}
-		resParams.Code = http.StatusInternalServerError
+		resParams.Code = http.StatusUnauthorized
 		resParams.Err = err
 		h.Res(resParams)
 		return
@@ -76,7 +76,7 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	// reset password
 	_, err = h.MongoDB.Collection("users").UpdateOne(ctx, bson.M{
-		"uid": reqData.Email,
+		"email": reqData.Email,
 	}, bson.M{
 		"$set": bson.M{
 			"passHash": string(passHash),

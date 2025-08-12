@@ -14,15 +14,25 @@ const (
 	GOOGLE_CLIENT_ID = "505214281747-g26m4g2lv692ff819neq6pbus4q6f36f.apps.googleusercontent.com"
 	ORIGIN           = "http://localhost:5173"
 	MONGO_DB         = "TrraformDev"
-	MAX_COLOR_IDX    = 30649
-	DEP0_PLOT_COUNT  = 34998
-	SUBPLOT_COUNT    = 24
-	MAX_DEPTH        = 2
-	CHUNK_SIZE       = 6
-	STD_BUILD_SIZE   = 48
-	LRG_BUILD_SIZE   = 72
-	MIN_BUILD_SIZE   = 6
+
+	MAX_COLOR_IDX   = 30649
+	DEP0_PLOT_COUNT = 34998
+	SUBPLOT_COUNT   = 24
+	MAX_DEPTH       = 2
+	CHUNK_SIZE      = 6
+	STD_BUILD_SIZE  = 48
+	LRG_BUILD_SIZE  = 72
+	MIN_BUILD_SIZE  = 6
+
+	USER_PLOT_LIMIT       = 100
+	PRICE_ID_SUBSCRIPTION = ""
 )
+
+var PRICE_ID_DEPTH = []string{
+	"price_depth_1",
+	"price_depth_2",
+	"price_depth_3",
+}
 
 type EnvVars struct {
 	CF_TURNSTILE_SECRET_KEY string

@@ -12,7 +12,7 @@ import (
 func NewUsername() string {
 	petname.NonDeterministicMode()
 	n, _ := rand.Int(rand.Reader, big.NewInt(1000))
-	return fmt.Sprintf("%s-%03d", petname.Generate(2, "-"), n.Int64())
+	return fmt.Sprintf("%s_%03d", petname.Generate(2, "_"), n.Int64())
 }
 
 func BytesToUint16Arr(data []byte) ([]uint16, error) {
