@@ -53,7 +53,6 @@ func (h *Handler) GetUserData(w http.ResponseWriter, r *http.Request) {
 		Token       string            `json:"token"`
 		Username    string            `json:"username"`
 		SubActive   bool              `json:"subActive"`
-		SubCanceled bool              `json:"subCanceled"`
 		PlotCredits int               `json:"plotCredits"`
 		PlotIds     []string          `json:"plotIds"`
 		Offenses    []schemas.Offense `json:"offenses"`
@@ -61,7 +60,6 @@ func (h *Handler) GetUserData(w http.ResponseWriter, r *http.Request) {
 		Token:       token,
 		Username:    user.Username,
 		SubActive:   user.Subscription.IsActive,
-		SubCanceled: user.Subscription.IsCanceled,
 		PlotCredits: user.PlotCredits,
 		PlotIds:     user.PlotIds,
 		Offenses:    user.Offenses,

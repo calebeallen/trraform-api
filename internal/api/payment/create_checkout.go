@@ -1,16 +1,20 @@
 package payment
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
+	"strings"
+	"time"
 	"trraformapi/internal/api"
 	"trraformapi/pkg/config"
 	plotutils "trraformapi/pkg/plot_utils"
 	"trraformapi/pkg/schemas"
 
 	"github.com/stripe/stripe-go/v82"
-	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/customer"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -37,7 +41,6 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 		h.Res(resParams)
 		return
 	}
-
 	if err := h.Validate.Struct(&reqData); err != nil {
 		resParams.Code = http.StatusBadRequest
 		resParams.Err = err
@@ -104,6 +107,8 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 	plotIdStrs := make([]string, len(reqData.PlotIds)) //normalized plotId strings
 	plotIds := make([]*plotutils.PlotId, len(reqData.PlotIds))
 	for i := range reqData.PlotIds {
+
+		// validate and normalize plot id
 		plotId, err := plotutils.PlotIdFromHexString(reqData.PlotIds[i])
 		if err != nil || !plotId.Validate() {
 			resParams.ResData = &struct {
@@ -116,6 +121,7 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 		}
 		plotIds[i] = plotId
 
+		// check for duplicate
 		plotIdStr := plotId.ToString()
 		plotIdStrs[i] = plotIdStr // use this over passed in plot id string
 		if _, isDup := uniq[plotIdStr]; isDup {
@@ -129,8 +135,14 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 		uniq[plotIdStr] = struct{}{}
 	}
 
+	// create checkout session id
+	sort.Strings(plotIdStrs)
+	base := uidStr + ":pay:" + strings.Join(plotIdStrs, ",")
+	sum := sha256.Sum256([]byte(base))
+	cartId := hex.EncodeToString(sum[:])
+
 	// lock plots
-	failed, err := plotutils.LockPlots(h.RedisCli, ctx, plotIdStrs, uidStr)
+	failed, err := plotutils.LockPlots(h.RedisCli, ctx, plotIdStrs, cartId)
 	if err != nil {
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
@@ -146,11 +158,11 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// verify that no plots are not already claimed
+	// verify that plots are not already claimed
 	filter := bson.M{"plotId": bson.M{"$in": plotIdStrs}}
 	cursor, err := h.MongoDB.Collection("plots").Find(ctx, filter, options.Find().SetProjection(bson.M{"plotId": 1}))
 	if err != nil {
-		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, uidStr)
+		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, cartId)
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
 		h.Res(resParams)
@@ -163,16 +175,16 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 		PlotId string `bson:"plotId"`
 	}
 	if err := cursor.All(ctx, &results); err != nil {
-		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, uidStr)
+		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, cartId)
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
 		h.Res(resParams)
 		return
 	}
 
-	// handle conflicts
+	// return conflicts if any
 	if len(results) > 0 {
-		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, uidStr)
+		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, cartId)
 		conflicts := make([]string, len(results))
 		for i := 0; i < len(results); i++ {
 			conflicts[i] = results[i].PlotId
@@ -191,10 +203,10 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 		quantities[plotIds[i].Depth()]++
 	}
 	// create order
-	lineItems := []*stripe.CheckoutSessionLineItemParams{}
+	lineItems := []*stripe.CheckoutSessionCreateLineItemParams{}
 	for depth, q := range quantities {
 		if q > 0 {
-			lineItems = append(lineItems, &stripe.CheckoutSessionLineItemParams{
+			lineItems = append(lineItems, &stripe.CheckoutSessionCreateLineItemParams{
 				Price:    stripe.String(config.PRICE_ID_DEPTH[depth]),
 				Quantity: stripe.Int64(q),
 			})
@@ -203,35 +215,44 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 
 	// metadata
 	metadata := map[string]string{
-		"uid": uidStr,
+		"type": "plot-purchase",
+		"uid":  uidStr,
+		"sid":  cartId,
 	}
 	for i, plotId := range plotIdStrs {
 		metadata[fmt.Sprintf("%d", i)] = plotId
 	}
 
 	// create stripe session
-	checkoutParams := &stripe.CheckoutSessionParams{
-		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
-		SuccessURL: stripe.String("https://yourapp.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"),
-		CancelURL:  stripe.String("https://yourapp.com/checkout/cancel"),
-		Customer:   stripe.String(stripeCustomerId),
+	checkoutParams := &stripe.CheckoutSessionCreateParams{
+		Mode:              stripe.String(string(stripe.CheckoutSessionModePayment)),
+		SuccessURL:        stripe.String("https://yourapp.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"),
+		CancelURL:         stripe.String("https://yourapp.com/checkout/cancel"),
+		Customer:          stripe.String(stripeCustomerId),
+		ClientReferenceID: stripe.String(uidStr),
+		ExpiresAt:         stripe.Int64(time.Now().Add(time.Hour).Unix()),
 
 		// tax
-		BillingAddressCollection: stripe.String("required"),
-		AutomaticTax: &stripe.CheckoutSessionAutomaticTaxParams{
+		BillingAddressCollection: stripe.String("auto"),
+		AutomaticTax: &stripe.CheckoutSessionCreateAutomaticTaxParams{
 			Enabled: stripe.Bool(true),
 		},
-		CustomerUpdate: &stripe.CheckoutSessionCustomerUpdateParams{
+		CustomerUpdate: &stripe.CheckoutSessionCreateCustomerUpdateParams{
 			Address: stripe.String("auto"),
 		},
 
 		LineItems: lineItems,
 		Metadata:  metadata,
+		PaymentIntentData: &stripe.CheckoutSessionCreatePaymentIntentDataParams{
+			Metadata:         metadata,
+			SetupFutureUsage: stripe.String(string(stripe.PaymentIntentSetupFutureUsageOffSession)),
+		},
 	}
+	checkoutParams.SetIdempotencyKey(cartId)
 
-	checkoutSession, err := session.New(checkoutParams)
+	checkoutSession, err := h.StripeCli.V1CheckoutSessions.Create(ctx, checkoutParams)
 	if err != nil {
-		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, uidStr)
+		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, cartId)
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
 		h.Res(resParams)
@@ -239,8 +260,8 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 	}
 
 	resParams.ResData = &struct {
-		CheckoutSession string `json:"checkoutSession"`
-	}{CheckoutSession: checkoutSession.ID}
+		StripeSession string `json:"stripeSession"`
+	}{StripeSession: checkoutSession.ID}
 	resParams.Code = http.StatusOK
 	h.Res(resParams)
 

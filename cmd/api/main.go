@@ -118,7 +118,7 @@ func main() {
 	})
 
 	// init stripe
-	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
+	h.StripeCli = stripe.NewClient(config.ENV.STRIPE_SECRET_KEY)
 
 	router := chi.NewRouter()
 

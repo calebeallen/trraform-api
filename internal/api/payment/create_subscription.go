@@ -1,13 +1,15 @@
 package payment
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
+	"time"
 	"trraformapi/internal/api"
 	"trraformapi/pkg/config"
 	"trraformapi/pkg/schemas"
 
 	"github.com/stripe/stripe-go/v82"
-	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/customer"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -32,6 +34,16 @@ func (h *Handler) CreateSubscriptionSession(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// block dual subs
+	if user.Subscription.IsActive {
+		resParams.ResData = &struct {
+			ActiveSub bool `json:"activeSub"`
+		}{ActiveSub: true}
+		resParams.Code = http.StatusForbidden
+		h.Res(resParams)
+		return
+	}
+
 	// create stripe customer if needed
 	var stripeCustomerId string
 	if user.StripeCustomer == "" {
@@ -50,7 +62,9 @@ func (h *Handler) CreateSubscriptionSession(w http.ResponseWriter, r *http.Reque
 		if _, err := userColl.UpdateOne(ctx, bson.M{
 			"_id": uid,
 		}, bson.M{
-			"stripeCustomer": cus.ID,
+			"$set": bson.M{
+				"stripeCustomer": cus.ID,
+			},
 		}); err != nil {
 			resParams.Code = http.StatusInternalServerError
 			resParams.Err = err
@@ -61,37 +75,54 @@ func (h *Handler) CreateSubscriptionSession(w http.ResponseWriter, r *http.Reque
 		stripeCustomerId = user.StripeCustomer
 	}
 
+	// create idempotency key
+	base := uidStr + ":sub:" + config.PRICE_ID_SUBSCRIPTION
+	sum := sha256.Sum256([]byte(base))
+	idemKey := hex.EncodeToString(sum[:])
+
 	// metadata
 	metadata := map[string]string{
-		"uid": uidStr,
+		"type": "subscription",
+		"uid":  uidStr,
 	}
 
 	// create stripe session
-	checkoutParams := &stripe.CheckoutSessionParams{
-		Mode:       stripe.String(string(stripe.CheckoutSessionModeSubscription)),
-		SuccessURL: stripe.String("https://yourapp.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"),
-		CancelURL:  stripe.String("https://yourapp.com/checkout/cancel"),
-		Customer:   stripe.String(stripeCustomerId),
+	subscriptionParams := &stripe.CheckoutSessionCreateParams{
+		Mode:              stripe.String(string(stripe.CheckoutSessionModeSubscription)),
+		SuccessURL:        stripe.String("https://yourapp.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"),
+		CancelURL:         stripe.String("https://yourapp.com/checkout/cancel"),
+		Customer:          stripe.String(stripeCustomerId),
+		ClientReferenceID: stripe.String(uidStr),
+		ExpiresAt:         stripe.Int64(time.Now().Add(time.Hour).Unix()),
 
 		// tax
-		BillingAddressCollection: stripe.String("required"),
-		AutomaticTax: &stripe.CheckoutSessionAutomaticTaxParams{
+		BillingAddressCollection: stripe.String("auto"),
+		AutomaticTax: &stripe.CheckoutSessionCreateAutomaticTaxParams{
 			Enabled: stripe.Bool(true),
 		},
-		CustomerUpdate: &stripe.CheckoutSessionCustomerUpdateParams{
+		CustomerUpdate: &stripe.CheckoutSessionCreateCustomerUpdateParams{
 			Address: stripe.String("auto"),
 		},
 
-		LineItems: []*stripe.CheckoutSessionLineItemParams{
+		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{
 			{
 				Price:    stripe.String(config.PRICE_ID_SUBSCRIPTION),
 				Quantity: stripe.Int64(1),
 			},
 		},
-		Metadata: metadata,
-	}
 
-	checkoutSession, err := session.New(checkoutParams)
+		// metadata
+		Metadata: metadata,
+		SubscriptionData: &stripe.CheckoutSessionCreateSubscriptionDataParams{
+			Metadata: metadata,
+		},
+		PaymentIntentData: &stripe.CheckoutSessionCreatePaymentIntentDataParams{
+			Metadata: metadata,
+		},
+	}
+	subscriptionParams.SetIdempotencyKey(idemKey)
+
+	subscriptionSession, err := h.StripeCli.V1CheckoutSessions.Create(ctx, subscriptionParams)
 	if err != nil {
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
@@ -100,8 +131,8 @@ func (h *Handler) CreateSubscriptionSession(w http.ResponseWriter, r *http.Reque
 	}
 
 	resParams.ResData = &struct {
-		CheckoutSession string `json:"checkoutSession"`
-	}{CheckoutSession: checkoutSession.ID}
+		StripeSession string `json:"stripeSession"`
+	}{StripeSession: subscriptionSession.ID}
 	resParams.Code = http.StatusOK
 	h.Res(resParams)
 

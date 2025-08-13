@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
 	"github.com/redis/go-redis/v9"
+	"github.com/stripe/stripe-go/v82"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.uber.org/zap"
 )
@@ -25,6 +26,7 @@ type Handler struct {
 	RedisCli  *redis.Client
 	AWSSESCli *ses.Client
 	R2Cli     *s3.Client
+	StripeCli *stripe.Client
 }
 
 type ResParams struct {

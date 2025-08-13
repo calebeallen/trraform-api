@@ -14,10 +14,8 @@ type Offense struct {
 }
 
 type Subscription struct {
-	ProductId      string `bson:"productId"`
 	SubscriptionId string `bson:"subscriptionId"`
 	IsActive       bool   `bson:"isActive"`
-	IsCanceled     bool   `bson:"isCanceled"`
 	RecurredCount  int    `bson:"recurredCount"`
 }
 

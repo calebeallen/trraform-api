@@ -101,12 +101,10 @@ func (h *Handler) ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 		// claim plot
 		now := time.Now().UTC()
 		plotEntry := schemas.Plot{
-			PlotId:    plotIdStr,
-			Ctime:     now,
-			Owner:     uid,
-			Purchased: false,
-			ClaimedAt: now,
-			Default:   true,
+			PlotId: plotIdStr,
+			Ctime:  now,
+			Owner:  uid,
+			Votes:  0,
 		}
 		if _, err := h.MongoDB.Collection("plots").InsertOne(txCtx, &plotEntry); err != nil {
 			return nil, err
