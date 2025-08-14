@@ -16,12 +16,14 @@ import (
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 func (h *Handler) StripeWebhook(w http.ResponseWriter, r *http.Request) {
 
 	defer r.Body.Close()
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), config.API_TIMEOUT)
+	defer cancel()
 	resParams := &api.ResParams{W: w, R: r}
 
 	payload, err := io.ReadAll(r.Body)
@@ -43,47 +45,27 @@ func (h *Handler) StripeWebhook(w http.ResponseWriter, r *http.Request) {
 
 	// handle plot purchase success
 	case stripe.EventTypeCheckoutSessionCompleted:
-		var cs stripe.CheckoutSession
-		if err = json.Unmarshal(event.Data.Raw, &cs); err != nil {
-			resParams.Code = http.StatusBadRequest
-			resParams.Err = err
-			h.Res(resParams)
+		var checkoutSession stripe.CheckoutSession
+		if err = json.Unmarshal(event.Data.Raw, &checkoutSession); err != nil {
+			h.Bad(resParams, err)
 			return
 		}
-		t, ok := cs.Metadata["type"]
-		if !ok {
-			resParams.Code = http.StatusInternalServerError
-			resParams.Err = errors.New("type field missing from payment intent metadata")
-			h.Res(resParams)
-			return
-		}
-		if t == config.CHECK_OUT_TYPE_PLOT_PURCHASE {
-			if err := checkoutCompleted(h, ctx, &cs); err != nil {
-				resParams.Code = http.StatusInternalServerError
-				resParams.Err = err
-				h.Res(resParams)
+		if checkoutSession.Mode == stripe.CheckoutSessionModePayment {
+			if err := checkoutCompleted(h, ctx, &checkoutSession); err != nil {
+				h.Err(resParams, err)
 				return
 			}
 		}
 
 	// handle plot purchase failed
 	case stripe.EventTypeCheckoutSessionExpired:
-		var cs stripe.CheckoutSession
-		if err := json.Unmarshal(event.Data.Raw, &cs); err != nil {
-			resParams.Code = http.StatusBadRequest
-			resParams.Err = err
-			h.Res(resParams)
+		var checkoutSession stripe.CheckoutSession
+		if err := json.Unmarshal(event.Data.Raw, &checkoutSession); err != nil {
+			h.Bad(resParams, err)
 			return
 		}
-		t, ok := cs.Metadata["type"]
-		if !ok {
-			resParams.Code = http.StatusInternalServerError
-			resParams.Err = errors.New("type field missing from invoice metadata")
-			h.Res(resParams)
-			return
-		}
-		if t == config.CHECK_OUT_TYPE_PLOT_PURCHASE {
-			if err := checkoutCanceled(h, &cs); err != nil {
+		if checkoutSession.Mode == stripe.CheckoutSessionModePayment {
+			if err := checkoutCanceled(h, &checkoutSession); err != nil {
 				resParams.Code = http.StatusInternalServerError
 				resParams.Err = err
 				h.Res(resParams)
@@ -91,53 +73,39 @@ func (h *Handler) StripeWebhook(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-	// handle subscription creation/renewal
+	// handle subscription creation/cycle
 	case stripe.EventTypeInvoicePaid:
-		var inv stripe.Invoice
-		if err := json.Unmarshal(event.Data.Raw, &inv); err != nil {
-			resParams.Code = http.StatusBadRequest
-			resParams.Err = err
-			h.Res(resParams)
+		var invoice stripe.Invoice
+		if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
+			h.Bad(resParams, err)
 			return
 		}
 
-		t, ok := inv.Parent.SubscriptionDetails.Metadata["type"]
-		if !ok {
-			resParams.Code = http.StatusInternalServerError
-			resParams.Err = errors.New("type field missing from invoice metadata")
-			h.Res(resParams)
-			return
-		}
+		switch invoice.BillingReason {
 
-		if t == config.CHECK_OUT_TYPE_SUBSCRIPTION {
-			var err error = nil
-			switch inv.BillingReason {
-			case stripe.InvoiceBillingReasonSubscriptionCreate:
-				err = createSubscription(h, ctx, &inv)
-			case stripe.InvoiceBillingReasonSubscriptionCycle:
-				err = renewSubscription(h, ctx, inv.Parent.SubscriptionDetails.Metadata)
-			}
-			if err != nil {
-				resParams.Code = http.StatusInternalServerError
-				resParams.Err = err
-				h.Res(resParams)
+		case stripe.InvoiceBillingReasonSubscriptionCreate:
+			if err := createSubscription(h, ctx, &invoice); err != nil {
+				h.Err(resParams, err)
 				return
 			}
+
+		case stripe.InvoiceBillingReasonSubscriptionCycle:
+			if err := renewSubscription(h, ctx, &invoice); err != nil {
+				h.Err(resParams, err)
+				return
+			}
+
 		}
 
 	// handle subscription cancellation
 	case stripe.EventTypeCustomerSubscriptionDeleted:
-		var si stripe.Subscription
-		if err := json.Unmarshal(event.Data.Raw, &si); err != nil {
-			resParams.Code = http.StatusBadRequest
-			resParams.Err = err
-			h.Res(resParams)
+		var sub stripe.Subscription
+		if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
+			h.Bad(resParams, err)
 			return
 		}
-		if err := cancelSubscription(h, ctx, si.Metadata); err != nil {
-			resParams.Code = http.StatusInternalServerError
-			resParams.Err = err
-			h.Res(resParams)
+		if err := cancelSubscription(h, ctx, &sub); err != nil {
+			h.Err(resParams, err)
 			return
 		}
 
@@ -148,10 +116,10 @@ func (h *Handler) StripeWebhook(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func checkoutCompleted(h *Handler, ctx context.Context, cs *stripe.CheckoutSession) error {
+func checkoutCompleted(h *Handler, ctx context.Context, checkoutSession *stripe.CheckoutSession) error {
 
 	// extract uid and cart session id
-	uidStr, ok := cs.Metadata["uid"]
+	uidStr, ok := checkoutSession.Metadata["uid"]
 	if !ok {
 		return errors.New("uid field missing from payment intent metadata")
 	}
@@ -159,7 +127,7 @@ func checkoutCompleted(h *Handler, ctx context.Context, cs *stripe.CheckoutSessi
 	if err != nil {
 		return err
 	}
-	lockOwner, ok := cs.Metadata["lo"]
+	lockOwner, ok := checkoutSession.Metadata["lo"]
 	if !ok {
 		return errors.New("sid field missing from payment intent metadata")
 	}
@@ -168,7 +136,7 @@ func checkoutCompleted(h *Handler, ctx context.Context, cs *stripe.CheckoutSessi
 	var plotIds []*plotutils.PlotId
 	var plotIdStrs []string
 	for i := range config.MAX_CART_SIZE {
-		plotIdStr, ok := cs.Metadata[fmt.Sprintf("%d", i)]
+		plotIdStr, ok := checkoutSession.Metadata[fmt.Sprintf("%d", i)]
 		if !ok {
 			break
 		}
@@ -193,7 +161,7 @@ func checkoutCompleted(h *Handler, ctx context.Context, cs *stripe.CheckoutSessi
 				"$each": plotIdStrs,
 			},
 		},
-	}).Decode(&user); err != nil {
+	}, options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&user); err != nil {
 		return err
 	}
 
@@ -228,10 +196,10 @@ func checkoutCompleted(h *Handler, ctx context.Context, cs *stripe.CheckoutSessi
 
 }
 
-func checkoutCanceled(h *Handler, cs *stripe.CheckoutSession) error {
+func checkoutCanceled(h *Handler, checkoutSession *stripe.CheckoutSession) error {
 
 	// cart session id
-	lockOwner, ok := cs.Metadata["lo"]
+	lockOwner, ok := checkoutSession.Metadata["lo"]
 	if !ok {
 		return errors.New("sid field missing from payment intent metadata")
 	}
@@ -245,9 +213,9 @@ func checkoutCanceled(h *Handler, cs *stripe.CheckoutSession) error {
 
 }
 
-func createSubscription(h *Handler, ctx context.Context, inv *stripe.Invoice) error {
+func createSubscription(h *Handler, ctx context.Context, invoice *stripe.Invoice) error {
 
-	uidStr, ok := inv.Parent.SubscriptionDetails.Metadata["uid"]
+	uidStr, ok := invoice.Parent.SubscriptionDetails.Metadata["uid"]
 	if !ok {
 		return errors.New("uid field missing from payment intent metadata")
 	}
@@ -261,19 +229,19 @@ func createSubscription(h *Handler, ctx context.Context, inv *stripe.Invoice) er
 	}, bson.M{
 		"$set": bson.M{
 			"subscription.isActive":       true,
-			"subscription.subscriptionId": inv.Parent.SubscriptionDetails.Subscription.ID,
+			"subscription.subscriptionId": invoice.Parent.SubscriptionDetails.Subscription.ID,
 		},
 	}); err != nil {
 		return err
 	}
 
-	return renewSubscription(h, ctx, inv.Parent.SubscriptionDetails.Metadata)
+	return renewSubscription(h, ctx, invoice)
 
 }
 
-func renewSubscription(h *Handler, ctx context.Context, data map[string]string) error {
+func renewSubscription(h *Handler, ctx context.Context, invoice *stripe.Invoice) error {
 
-	uidStr, ok := data["uid"]
+	uidStr, ok := invoice.Parent.SubscriptionDetails.Metadata["uid"]
 	if !ok {
 		return errors.New("uid field missing from payment intent metadata")
 	}
@@ -283,37 +251,55 @@ func renewSubscription(h *Handler, ctx context.Context, data map[string]string) 
 	}
 
 	// give bonus plot credit for first 6 payment cycles
-	if _, err := h.MongoDB.Collection("users").UpdateOne(ctx, bson.M{
-		"_id": uid,
-		"subscription.recurredCount": bson.M{
-			"$lt": config.SUBSCRIPTION_BONUS_PLOTS,
+	bonusPlotThreshold := fmt.Sprintf("subscription.invoices.%d", config.SUBSCRIPTION_BONUS_PLOTS-1)
+	res, err := h.MongoDB.Collection("users").UpdateOne(ctx,
+		bson.M{
+			"_id": uid,
+			"subscription.invoices": bson.M{
+				"$nin": invoice.ID,
+			},
+			bonusPlotThreshold: bson.M{
+				"$exists": false,
+			},
 		},
-	}, bson.M{
-		"$inc": bson.M{
-			"plotCredits": 1,
+		bson.M{
+			"$inc": bson.M{
+				"plotCredits": 1,
+			},
+			"$push": bson.M{
+				"subscription.invoices": invoice.ID,
+			},
 		},
-	}); err != nil {
+	)
+	if err != nil {
 		return err
+	}
+	if res.MatchedCount > 0 { // success
+		return nil
 	}
 
 	// increment recurred count
-	if _, err := h.MongoDB.Collection("users").UpdateOne(ctx, bson.M{
-		"_id": uid,
-	}, bson.M{
-		"$inc": bson.M{
-			"subscription.recurredCount": 1,
+	_, err = h.MongoDB.Collection("users").UpdateOne(ctx,
+		bson.M{
+			"_id": uid,
+			"subscription.invoices": bson.M{
+				"$nin": invoice.ID,
+			},
 		},
-	}); err != nil {
-		return err
-	}
+		bson.M{
+			"$push": bson.M{
+				"subscription.invoices": invoice.ID,
+			},
+		},
+	)
 
-	return nil
+	return err
 
 }
 
-func cancelSubscription(h *Handler, ctx context.Context, data map[string]string) error {
+func cancelSubscription(h *Handler, ctx context.Context, subscription *stripe.Subscription) error {
 
-	uidStr, ok := data["uid"]
+	uidStr, ok := subscription.Metadata["uid"]
 	if !ok {
 		return errors.New("uid field missing from payment intent metadata")
 	}
@@ -331,6 +317,10 @@ func cancelSubscription(h *Handler, ctx context.Context, data map[string]string)
 	}); err != nil {
 		return err
 	}
+
+	// set meta data verified false for all plots
+
+	// flag all plots for update
 
 	return nil
 

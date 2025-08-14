@@ -14,9 +14,10 @@ type Offense struct {
 }
 
 type Subscription struct {
-	SubscriptionId string `bson:"subscriptionId"`
-	IsActive       bool   `bson:"isActive"`
-	RecurredCount  int    `bson:"recurredCount"`
+	SubscriptionId string   `bson:"subscriptionId"`
+	IsActive       bool     `bson:"isActive"`
+	RecurredCount  int      `bson:"recurredCount"`
+	Invoices       []string `bson:"invoices"`
 }
 
 type User struct {

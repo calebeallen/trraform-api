@@ -130,7 +130,7 @@ func main() {
 	}))
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.RequestSize(1 << 20))
-	router.Use(middleware.Timeout(5 * time.Minute))
+	router.Use(middleware.Timeout(config.API_TIMEOUT))
 
 	authH := &auth.Handler{Handler: h}
 	userH := &user.Handler{Handler: h}

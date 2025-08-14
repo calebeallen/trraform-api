@@ -39,6 +39,7 @@ var PRICE_ID_DEPTH = []string{
 	"price_depth_3",
 }
 var CHECKOUT_SESSION_DURATION time.Duration = time.Minute * 30
+var API_TIMEOUT time.Duration = time.Minute * 5
 
 type EnvVars struct {
 	CF_TURNSTILE_SECRET_KEY string

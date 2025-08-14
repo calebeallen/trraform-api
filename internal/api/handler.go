@@ -93,3 +93,15 @@ func (h *Handler) Res(params *ResParams) {
 	render.JSON(params.W, params.R, params.ResData)
 
 }
+
+func (h *Handler) Err(params *ResParams, err error) {
+	params.Code = http.StatusInternalServerError
+	params.Err = err
+	h.Res(params)
+}
+
+func (h *Handler) Bad(params *ResParams, err error) {
+	params.Code = http.StatusBadRequest
+	params.Err = err
+	h.Res(params)
+}
