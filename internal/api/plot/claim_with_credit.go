@@ -10,6 +10,7 @@ import (
 	plotutils "trraformapi/pkg/plot_utils"
 	"trraformapi/pkg/schemas"
 
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -47,10 +48,10 @@ func (h *Handler) ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 
 	plotId, _ := plotutils.PlotIdFromHexString(reqData.PlotId)
 	plotIdStr := plotId.ToString()
-	uidString := uid.Hex()
+	lockOwner := uuid.NewString()
 
 	// lock plot to prevent duplicate claims
-	failedIds, err := plotutils.LockPlots(h.RedisCli, ctx, []string{plotIdStr}, uidString)
+	failedIds, err := plotutils.LockPlots(h.RedisCli, ctx, []string{plotIdStr}, lockOwner)
 	if err != nil {
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
@@ -65,7 +66,7 @@ func (h *Handler) ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 		h.Res(resParams)
 		return
 	}
-	defer plotutils.UnlockPlots(h.RedisCli, []string{plotIdStr}, uidString)
+	defer plotutils.UnlockPlots(h.RedisCli, lockOwner)
 
 	// create transaction session
 	txSession, err := h.MongoDB.Client().StartSession()

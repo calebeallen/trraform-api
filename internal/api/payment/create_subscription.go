@@ -81,8 +81,7 @@ func (h *Handler) CreateSubscriptionSession(w http.ResponseWriter, r *http.Reque
 
 	// metadata
 	metadata := map[string]string{
-		"type": config.CHECK_OUT_TYPE_SUBSCRIPTION,
-		"uid":  uidStr,
+		"uid": uidStr,
 	}
 
 	// create stripe session

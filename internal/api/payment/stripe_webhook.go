@@ -28,8 +28,7 @@ func (h *Handler) StripeWebhook(w http.ResponseWriter, r *http.Request) {
 
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
-		resParams.Code = http.StatusBadRequest
-		h.Res(resParams)
+		h.Bad(resParams, err)
 		return
 	}
 
@@ -80,7 +79,6 @@ func (h *Handler) StripeWebhook(w http.ResponseWriter, r *http.Request) {
 			h.Bad(resParams, err)
 			return
 		}
-
 		switch invoice.BillingReason {
 
 		case stripe.InvoiceBillingReasonSubscriptionCreate:

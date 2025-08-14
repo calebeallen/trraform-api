@@ -9,6 +9,7 @@ import (
 	"trraformapi/internal/api"
 	"trraformapi/internal/api/auth"
 	"trraformapi/internal/api/leaderboard"
+	"trraformapi/internal/api/payment"
 	"trraformapi/internal/api/plot"
 	"trraformapi/internal/api/user"
 	"trraformapi/pkg/config"
@@ -136,7 +137,7 @@ func main() {
 	userH := &user.Handler{Handler: h}
 	plotH := &plot.Handler{Handler: h}
 	leaderboardH := &leaderboard.Handler{Handler: h}
-	// paymentsH := &payments.Handler{Handler: deps}
+	paymentsH := &payment.Handler{Handler: h}
 
 	// auth endpoints (add captcha)
 	router.Post("/auth/create-account", authH.CreateAccount)
@@ -159,11 +160,10 @@ func main() {
 	router.Post("/leaderboard/vote", leaderboardH.Vote)
 
 	// payment endpoints
-	// router.Get("/payment/intent/details", payment.GetPaymentIntentDetails)
-	// router.Post("/payment/intent", payment.CreatePaymentIntent)
-	// router.Post("/payment/subscription/create", payment.CreateSubscription)
-	// router.Post("/payment/subscription/update", payment.UpdateSubscription)
-	// router.Post("/payment/stripe-webhook", payment.StripeWebhook)
+	router.Get("/payment/portal", h.AuthMiddleware(paymentsH.CreatePortalSession))
+	router.Post("/payment/checkout", h.AuthMiddleware(paymentsH.CreateCheckoutSession))
+	router.Post("/payment/subscription", h.AuthMiddleware(paymentsH.CreateSubscriptionSession))
+	router.Post("/payment/webhook", paymentsH.StripeWebhook)
 
 	logger.Info("Server running on port 8080")
 	http.ListenAndServe(":8080", router)

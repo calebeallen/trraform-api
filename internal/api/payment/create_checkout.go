@@ -249,9 +249,8 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 
 	// metadata
 	metadata := map[string]string{
-		"type": config.CHECK_OUT_TYPE_PLOT_PURCHASE,
-		"uid":  uidStr,
-		"lo":   lockOwner,
+		"uid": uidStr,
+		"lo":  lockOwner,
 	}
 	for i, plotId := range plotIdStrs {
 		metadata[fmt.Sprintf("%d", i)] = plotId
