@@ -86,7 +86,6 @@ func (h *Handler) UpdatePlot(w http.ResponseWriter, r *http.Request) {
 		Description: reqData.Description,
 		Link:        reqData.Link,
 		LinkTitle:   reqData.LinkTitle,
-		Owner:       user.Username,
 		BuildData:   buildData,
 	}
 
@@ -118,7 +117,10 @@ func (h *Handler) UpdatePlot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// upload plot data
-	metadata := map[string]string{"verified": strconv.FormatBool(user.Subscription.IsActive)}
+	metadata := map[string]string{
+		"owner":    user.Username,
+		"verified": strconv.FormatBool(user.Subscription.IsActive),
+	}
 	if err := utils.PutObjectR2(h.R2Cli, ctx, config.CF_PLOT_BUCKET, plotIdStr+".dat", bytes.NewReader(plotDataBytes), "application/octet-stream", metadata); err != nil {
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
@@ -126,7 +128,7 @@ func (h *Handler) UpdatePlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := plotutils.FlagPlotForUpdate(h.RedisCli, ctx, plotId); err != nil {
+	if err := plotutils.FlagPlotForUpdate(h.RedisCli, ctx, plotId, false); err != nil {
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
 		h.Res(resParams)

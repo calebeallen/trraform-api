@@ -127,6 +127,24 @@ func GetObjectR2(r2Cli *s3.Client, ctx context.Context, bucket string, key strin
 
 }
 
+func CopyObjectR2(r2Cli *s3.Client, ctx context.Context, bucket string, keySrc string, keyDest string, contentType string, metadata map[string]string) error {
+
+	_, err := r2Cli.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:            aws.String(bucket),
+		CopySource:        aws.String(bucket + "/" + keySrc),
+		Key:               aws.String(keyDest),
+		ContentType:       aws.String(contentType),
+		Metadata:          metadata,
+		MetadataDirective: types.MetadataDirectiveReplace,
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
 func PurgeCacheCDN(httpCli *http.Client, ctx context.Context, urls []string) error {
 
 	type Headers struct {

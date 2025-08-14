@@ -180,9 +180,6 @@ func checkoutCompleted(h *Handler, ctx context.Context, checkoutSession *stripe.
 		if err := plotutils.SetDefaultPlot(h.RedisCli, h.R2Cli, ctx, plotId, &user); err != nil {
 			return err
 		}
-		if err := plotutils.FlagPlotForUpdate(h.RedisCli, ctx, plotId); err != nil {
-			return err
-		}
 	}
 
 	_, err = plotutils.UnlockPlots(h.RedisCli, lockOwner)
@@ -306,17 +303,19 @@ func cancelSubscription(h *Handler, ctx context.Context, subscription *stripe.Su
 		return err
 	}
 
-	if _, err := h.MongoDB.Collection("users").UpdateOne(ctx, bson.M{
+	var user schemas.User
+	if _, err := h.MongoDB.Collection("users").FindOneAndUpdate(ctx, bson.M{
 		"_id": uid,
 	}, bson.M{
 		"$set": bson.M{
 			"subscription.isActive": false,
 		},
-	}); err != nil {
+	}).Decode(err); err != nil {
 		return err
 	}
 
 	// set meta data verified false for all plots
+	for plot
 
 	// flag all plots for update
 

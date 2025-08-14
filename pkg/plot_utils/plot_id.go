@@ -48,7 +48,7 @@ func PlotIdValidator(fl validator.FieldLevel) bool {
 
 }
 
-func FlagPlotForUpdate(redisCli *redis.Client, ctx context.Context, plotId *PlotId) error {
+func FlagPlotForUpdate(redisCli *redis.Client, ctx context.Context, plotId *PlotId, metadataOnly bool) error {
 
 	plotIdStr := plotId.ToString()
 

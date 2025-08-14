@@ -13,11 +13,10 @@ import (
 )
 
 type PlotData struct {
-	Name        string `validate:"maxgraphemes=32"`
-	Description string `validate:"maxgraphemes=128"`
-	Link        string `validate:"maxgraphemes=256"`
-	LinkTitle   string `validate:"maxgraphemes=48"`
-	Owner       string
+	Name        string   `validate:"maxgraphemes=32"`
+	Description string   `validate:"maxgraphemes=128"`
+	Link        string   `validate:"maxgraphemes=256"`
+	LinkTitle   string   `validate:"maxgraphemes=48"`
 	BuildData   []uint16 `validate:"builddata"`
 }
 
@@ -27,7 +26,6 @@ type plotDataJsonPart struct {
 	Description string `json:"desc"`
 	Link        string `json:"link"`
 	LinkTitle   string `json:"linkTitle"`
-	Owner       string `json:"owner"`
 }
 
 func MaxGraphemesValidator(fl validator.FieldLevel) bool {
@@ -154,7 +152,6 @@ func Decode(data []byte) (*PlotData, error) {
 		Description: jsonData.Description,
 		Link:        jsonData.Link,
 		LinkTitle:   jsonData.LinkTitle,
-		Owner:       jsonData.Owner,
 		BuildData:   buildData,
 	}
 
@@ -170,7 +167,6 @@ func (plotData *PlotData) Encode() ([]byte, error) {
 		Description: plotData.Description,
 		Link:        plotData.Link,
 		LinkTitle:   plotData.LinkTitle,
-		Owner:       plotData.Owner,
 	}
 
 	// Convert the struct to JSON bytes
