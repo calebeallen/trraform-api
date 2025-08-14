@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -24,10 +25,12 @@ const (
 	LRG_BUILD_SIZE  = 72
 	MIN_BUILD_SIZE  = 6
 
-	USER_PLOT_LIMIT          = 100
-	MAX_CART_SIZE            = 40
-	SUBSCRIPTION_BONUS_PLOTS = 6
-	PRICE_ID_SUBSCRIPTION    = ""
+	USER_PLOT_LIMIT              = 100
+	MAX_CART_SIZE                = 40
+	SUBSCRIPTION_BONUS_PLOTS     = 6
+	CHECK_OUT_TYPE_PLOT_PURCHASE = "plot-purchase"
+	CHECK_OUT_TYPE_SUBSCRIPTION  = "subscription"
+	PRICE_ID_SUBSCRIPTION        = ""
 )
 
 var PRICE_ID_DEPTH = []string{
@@ -35,6 +38,7 @@ var PRICE_ID_DEPTH = []string{
 	"price_depth_2",
 	"price_depth_3",
 }
+var CHECKOUT_SESSION_DURATION time.Duration = time.Minute * 30
 
 type EnvVars struct {
 	CF_TURNSTILE_SECRET_KEY string

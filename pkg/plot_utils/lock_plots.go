@@ -2,102 +2,83 @@ package plotutils
 
 import (
 	"context"
-	"fmt"
 	"time"
+	"trraformapi/pkg/config"
 
 	"github.com/redis/go-redis/v9"
 )
 
 var lockScript = redis.NewScript(`
-	local owner  = ARGV[1]
-	local ttl_ms = tonumber(ARGV[2])
+local owner  = ARGV[1]
+local ttl_ms = tonumber(ARGV[2])
+local setkey = "claimset:" .. owner
 
-	-- gather all conflicts
-	local offenders = {}
-	for _, key in ipairs(KEYS) do
-		local cur = redis.call("GET", key)
-		if cur and cur ~= owner then
-			table.insert(offenders, key)
-		end
+-- 1) collect conflicts (keys owned by someone else)
+local offenders = {}
+for _, pid in ipairs(KEYS) do
+	local k = "claimlock:" .. pid
+	local cur = redis.call("GET", k)
+	if cur and cur ~= owner then
+		offenders[#offenders+1] = pid
 	end
+end
+if #offenders > 0 then
+	return offenders   -- list of failed locks
+end
 
-	-- if any conflicts, abort
-	if #offenders > 0 then
-		return {0, offenders}
-	end
+-- 2) acquire/refresh locks for this owner
+for _, pid in ipairs(KEYS) do
+	local k = "claimlock:" .. pid
+	redis.call("SET", k, owner, "PX", ttl_ms)
+end
 
-	-- lock
-	for _, key in ipairs(KEYS) do
-		redis.call("SET", key, owner, "PX", ttl_ms)
-	end
+-- 3) add plotIds to owner's set and refresh TTL (incremental semantics)
+if #KEYS > 0 then
+  	redis.call("SADD", setkey, unpack(KEYS))
+end
+redis.call("PEXPIRE", setkey, ttl_ms)
 
-	return {1, #KEYS}
+return {} -- success => empty list
 `)
 
 var unlockScript = redis.NewScript(`
-	local owner = ARGV[1]
+local owner  = ARGV[1]
+local setkey = "claimset:" .. owner
 
-	-- validate owner owns all plots
-	for _, key in ipairs(KEYS) do
-		local cur = redis.call("GET", key)
-		if cur and cur ~= owner then
-			return 0
-		end
+local pids = redis.call("SMEMBERS", setkey)
+local n = 0
+for _, pid in ipairs(pids) do
+	local k = "claimlock:" .. pid
+	if redis.call("GET", k) == owner then
+		redis.call("DEL", k)
+		n = n + 1
 	end
-
-	-- unlock
-	for _, key in ipairs(KEYS) do
-		redis.call("DEL", key)
-	end
-
-	return 1
+end
+redis.call("DEL", setkey)
+return n
 `)
 
 func LockPlots(redisCli *redis.Client, ctx context.Context, plotIds []string, owner string) ([]string, error) {
-	keys := make([]string, len(plotIds))
-	for i, id := range plotIds {
-		keys[i] = "claimlock:" + id
-	}
-
-	ttl := time.Hour
-	res, err := lockScript.Run(ctx, redisCli, keys, owner, ttl.Milliseconds()).Result()
+	ttl := config.CHECKOUT_SESSION_DURATION * 2
+	res, err := lockScript.Run(ctx, redisCli, plotIds, owner, ttl.Milliseconds()).Result()
 	if err != nil {
 		return nil, err
 	}
-	out := res.([]any)
-	ok := out[0].(int64)
-	if ok == 0 {
 
-		raw := out[1].([]any)
-		failed := make([]string, len(raw))
-		for i, v := range raw {
-			failed[i] = v.(string)
-		}
-
-		return failed, nil
-
+	raw := res.([]any)
+	failed := make([]string, len(raw))
+	for i, v := range raw {
+		failed[i] = v.(string)
 	}
-	return nil, nil
+	return failed, nil
 }
 
-func UnlockPlots(redisCli *redis.Client, plotIds []string, owner string) (bool, error) {
-	ctx := context.Background()
-
-	keys := make([]string, len(plotIds))
-	for i, id := range plotIds {
-		keys[i] = "claimlock:" + id
-	}
-
-	res, err := unlockScript.Run(ctx, redisCli, keys, owner).Result()
+func UnlockPlots(redisCli *redis.Client, owner string) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	res, err := unlockScript.Run(ctx, redisCli, []string{}, owner).Result()
 	if err != nil {
-		return false, err
+		return 0, err
 	}
-	okVal, ok := res.(int64)
-	if !ok {
-		return false, fmt.Errorf("unexpected lua reply: %#v", res)
-	}
-	if okVal == 0 {
-		return false, nil
-	}
-	return true, nil
+	return res.(int64), nil
 }

@@ -1,24 +1,28 @@
 package payment
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
-	"sort"
-	"strings"
 	"time"
 	"trraformapi/internal/api"
 	"trraformapi/pkg/config"
 	plotutils "trraformapi/pkg/plot_utils"
 	"trraformapi/pkg/schemas"
 
+	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
-	"github.com/stripe/stripe-go/v82/customer"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
+
+type CartSession struct {
+	LockOwner       string `json:"l"`
+	StripeSessionId string `json:"i"`
+}
 
 func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 
@@ -49,6 +53,30 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 	}
 	resParams.ReqData = reqData
 
+	// set mutex to prevent session creation race condition
+	// 1 min timeout is just for precaution
+	mutexKey := "cartmutex:" + uidStr
+	cartMutex, err := h.RedisCli.SetNX(ctx, mutexKey, 1, 10*time.Minute).Result()
+	if err != nil {
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
+		return
+	}
+	if !cartMutex { // another session currently being created
+		resParams.Code = http.StatusTooManyRequests
+		h.Res(resParams)
+		return
+	}
+	defer func() { // release mutex after session created
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err := h.RedisCli.Del(cleanupCtx, mutexKey).Err()
+		if err != nil {
+			log.Printf("mutex release failed:\n%v", err)
+		}
+	}()
+
 	// get user data
 	var user schemas.User
 	userColl := h.MongoDB.Collection("users")
@@ -59,37 +87,6 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 		resParams.Err = err
 		h.Res(resParams)
 		return
-	}
-
-	// create stripe customer if needed
-	var stripeCustomerId string
-	if user.StripeCustomer == "" {
-		cus, err := customer.New(&stripe.CustomerParams{
-			Email: stripe.String(user.Email),
-		})
-		if err != nil {
-			resParams.Code = http.StatusInternalServerError
-			resParams.Err = err
-			h.Res(resParams)
-			return
-		}
-		stripeCustomerId = cus.ID
-
-		// update user with new stripe customer id
-		if _, err := userColl.UpdateOne(ctx, bson.M{
-			"_id": uid,
-		}, bson.M{
-			"$set": bson.M{
-				"stripeCustomer": cus.ID,
-			},
-		}); err != nil {
-			resParams.Code = http.StatusInternalServerError
-			resParams.Err = err
-			h.Res(resParams)
-			return
-		}
-	} else {
-		stripeCustomerId = user.StripeCustomer
 	}
 
 	// check for user plot limit exceeded
@@ -135,14 +132,51 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 		uniq[plotIdStr] = struct{}{}
 	}
 
-	// create checkout session id
-	sort.Strings(plotIdStrs)
-	base := uidStr + ":pay:" + strings.Join(plotIdStrs, ",")
-	sum := sha256.Sum256([]byte(base))
-	cartId := hex.EncodeToString(sum[:])
+	// check for an existing valid cart session for user
+	cartSessionKey := "cart:" + uidStr
+	prevCartSessionStr, err := h.RedisCli.Get(ctx, cartSessionKey).Result()
+	if err != nil && err != redis.Nil {
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
+		return
+	} else if err != redis.Nil { // need to invalidate current session
+
+		// decode previous session data
+		var prevCartSession CartSession
+		if err := json.Unmarshal([]byte(prevCartSessionStr), &prevCartSession); err != nil {
+			resParams.Code = http.StatusInternalServerError
+			resParams.Err = err
+			h.Res(resParams)
+			return
+		}
+
+		// expire previous session
+		_, err := h.StripeCli.V1CheckoutSessions.Expire(ctx, prevCartSession.StripeSessionId, nil)
+		if err != nil { // handle non-stripe errors, stripe error means checkout session already invalid.
+			if _, ok := err.(*stripe.Error); !ok {
+				resParams.Code = http.StatusInternalServerError
+				resParams.Err = err
+				h.Res(resParams)
+				return
+			}
+		}
+
+		// unlock plots from previous session
+		if _, err := plotutils.UnlockPlots(h.RedisCli, prevCartSession.LockOwner); err != nil {
+			resParams.Code = http.StatusInternalServerError
+			resParams.Err = err
+			h.Res(resParams)
+			return
+		}
+
+	}
+
+	// create new lock owner
+	lockOwner := uuid.New().String()
 
 	// lock plots
-	failed, err := plotutils.LockPlots(h.RedisCli, ctx, plotIdStrs, cartId)
+	failed, err := plotutils.LockPlots(h.RedisCli, ctx, plotIdStrs, lockOwner)
 	if err != nil {
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
@@ -162,7 +196,7 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 	filter := bson.M{"plotId": bson.M{"$in": plotIdStrs}}
 	cursor, err := h.MongoDB.Collection("plots").Find(ctx, filter, options.Find().SetProjection(bson.M{"plotId": 1}))
 	if err != nil {
-		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, cartId)
+		plotutils.UnlockPlots(h.RedisCli, lockOwner)
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
 		h.Res(resParams)
@@ -175,7 +209,7 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 		PlotId string `bson:"plotId"`
 	}
 	if err := cursor.All(ctx, &results); err != nil {
-		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, cartId)
+		plotutils.UnlockPlots(h.RedisCli, lockOwner)
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
 		h.Res(resParams)
@@ -184,7 +218,7 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 
 	// return conflicts if any
 	if len(results) > 0 {
-		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, cartId)
+		plotutils.UnlockPlots(h.RedisCli, lockOwner)
 		conflicts := make([]string, len(results))
 		for i := 0; i < len(results); i++ {
 			conflicts[i] = results[i].PlotId
@@ -215,22 +249,55 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 
 	// metadata
 	metadata := map[string]string{
-		"type": "plot-purchase",
+		"type": config.CHECK_OUT_TYPE_PLOT_PURCHASE,
 		"uid":  uidStr,
-		"sid":  cartId,
+		"lo":   lockOwner,
 	}
 	for i, plotId := range plotIdStrs {
 		metadata[fmt.Sprintf("%d", i)] = plotId
 	}
 
-	// create stripe session
+	// create stripe customer for user if needed
+	var stripeCustomerId string
+	if user.StripeCustomer == "" {
+		cus, err := h.StripeCli.V1Customers.Create(ctx, &stripe.CustomerCreateParams{
+			Email: stripe.String(user.Email),
+		})
+		if err != nil {
+			plotutils.UnlockPlots(h.RedisCli, lockOwner)
+			resParams.Code = http.StatusInternalServerError
+			resParams.Err = err
+			h.Res(resParams)
+			return
+		}
+		stripeCustomerId = cus.ID
+
+		// update user with new stripe customer id
+		if _, err := userColl.UpdateOne(ctx, bson.M{
+			"_id": uid,
+		}, bson.M{
+			"$set": bson.M{
+				"stripeCustomer": cus.ID,
+			},
+		}); err != nil {
+			plotutils.UnlockPlots(h.RedisCli, lockOwner)
+			resParams.Code = http.StatusInternalServerError
+			resParams.Err = err
+			h.Res(resParams)
+			return
+		}
+	} else {
+		stripeCustomerId = user.StripeCustomer
+	}
+
+	// create stripe checkout session
 	checkoutParams := &stripe.CheckoutSessionCreateParams{
 		Mode:              stripe.String(string(stripe.CheckoutSessionModePayment)),
 		SuccessURL:        stripe.String("https://yourapp.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"),
 		CancelURL:         stripe.String("https://yourapp.com/checkout/cancel"),
 		Customer:          stripe.String(stripeCustomerId),
 		ClientReferenceID: stripe.String(uidStr),
-		ExpiresAt:         stripe.Int64(time.Now().Add(time.Hour).Unix()),
+		ExpiresAt:         stripe.Int64(time.Now().Add(config.CHECKOUT_SESSION_DURATION).Unix()),
 
 		// tax
 		BillingAddressCollection: stripe.String("auto"),
@@ -248,11 +315,23 @@ func (h *Handler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) 
 			SetupFutureUsage: stripe.String(string(stripe.PaymentIntentSetupFutureUsageOffSession)),
 		},
 	}
-	checkoutParams.SetIdempotencyKey(cartId)
-
 	checkoutSession, err := h.StripeCli.V1CheckoutSessions.Create(ctx, checkoutParams)
 	if err != nil {
-		plotutils.UnlockPlots(h.RedisCli, plotIdStrs, cartId)
+		plotutils.UnlockPlots(h.RedisCli, lockOwner)
+		resParams.Code = http.StatusInternalServerError
+		resParams.Err = err
+		h.Res(resParams)
+		return
+	}
+
+	// keep track of this checkout session
+	cartSession := CartSession{
+		StripeSessionId: checkoutSession.ID,
+		LockOwner:       lockOwner,
+	}
+	cartSessionData, _ := json.Marshal(cartSession)
+	if err := h.RedisCli.Set(ctx, cartSessionKey, string(cartSessionData), config.CHECKOUT_SESSION_DURATION*2).Err(); err != nil {
+		plotutils.UnlockPlots(h.RedisCli, lockOwner)
 		resParams.Code = http.StatusInternalServerError
 		resParams.Err = err
 		h.Res(resParams)

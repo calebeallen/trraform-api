@@ -10,7 +10,6 @@ import (
 	"trraformapi/pkg/schemas"
 
 	"github.com/stripe/stripe-go/v82"
-	"github.com/stripe/stripe-go/v82/customer"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -47,7 +46,7 @@ func (h *Handler) CreateSubscriptionSession(w http.ResponseWriter, r *http.Reque
 	// create stripe customer if needed
 	var stripeCustomerId string
 	if user.StripeCustomer == "" {
-		cus, err := customer.New(&stripe.CustomerParams{
+		cus, err := h.StripeCli.V1Customers.Create(ctx, &stripe.CustomerCreateParams{
 			Email: stripe.String(user.Email),
 		})
 		if err != nil {
@@ -82,7 +81,7 @@ func (h *Handler) CreateSubscriptionSession(w http.ResponseWriter, r *http.Reque
 
 	// metadata
 	metadata := map[string]string{
-		"type": "subscription",
+		"type": config.CHECK_OUT_TYPE_SUBSCRIPTION,
 		"uid":  uidStr,
 	}
 
@@ -93,7 +92,7 @@ func (h *Handler) CreateSubscriptionSession(w http.ResponseWriter, r *http.Reque
 		CancelURL:         stripe.String("https://yourapp.com/checkout/cancel"),
 		Customer:          stripe.String(stripeCustomerId),
 		ClientReferenceID: stripe.String(uidStr),
-		ExpiresAt:         stripe.Int64(time.Now().Add(time.Hour).Unix()),
+		ExpiresAt:         stripe.Int64(time.Now().Add(config.CHECKOUT_SESSION_DURATION).Unix()),
 
 		// tax
 		BillingAddressCollection: stripe.String("auto"),
