@@ -114,9 +114,6 @@ func (h *Handler) CreateSubscriptionSession(w http.ResponseWriter, r *http.Reque
 		SubscriptionData: &stripe.CheckoutSessionCreateSubscriptionDataParams{
 			Metadata: metadata,
 		},
-		PaymentIntentData: &stripe.CheckoutSessionCreatePaymentIntentDataParams{
-			Metadata: metadata,
-		},
 	}
 	subscriptionParams.SetIdempotencyKey(idemKey)
 

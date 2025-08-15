@@ -161,8 +161,8 @@ func main() {
 
 	// payment endpoints
 	router.Get("/payment/portal", h.AuthMiddleware(paymentsH.CreatePortalSession))
+	router.Get("/payment/subscription", h.AuthMiddleware(paymentsH.CreateSubscriptionSession))
 	router.Post("/payment/checkout", h.AuthMiddleware(paymentsH.CreateCheckoutSession))
-	router.Post("/payment/subscription", h.AuthMiddleware(paymentsH.CreateSubscriptionSession))
 	router.Post("/payment/webhook", paymentsH.StripeWebhook)
 
 	logger.Info("Server running on port 8080")

@@ -28,7 +28,7 @@ const (
 	USER_PLOT_LIMIT          = 100
 	MAX_CART_SIZE            = 40
 	SUBSCRIPTION_BONUS_PLOTS = 6
-	PRICE_ID_SUBSCRIPTION    = ""
+	PRICE_ID_SUBSCRIPTION    = "price_1RwGA7GgpUJInHeUsm3DANJK" // DEV!!
 )
 
 var PRICE_ID_DEPTH = []string{

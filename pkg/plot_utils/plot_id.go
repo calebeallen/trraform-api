@@ -50,17 +50,17 @@ func PlotIdValidator(fl validator.FieldLevel) bool {
 
 func FlagPlotForUpdate(redisCli *redis.Client, ctx context.Context, plotId *PlotId, metadataOnly bool) error {
 
-	plotIdStr := plotId.ToString()
+	// plotIdStr := plotId.ToString()
 
 	// get chunk id from plot id
 	// check if chunk id set update entry already exists
 	// if it does, add chunk id to chunk update queue with priority 1
 	// add plot id to chunk id update set
 
-	err := redisCli.SAdd(ctx, "update:plotids", plotIdStr).Err()
-	if err != nil {
-		return err
-	}
+	// err := redisCli.SAdd(ctx, "update:plotids", plotIdStr).Err()
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 

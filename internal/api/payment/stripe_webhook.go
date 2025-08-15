@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 	"trraformapi/internal/api"
 	"trraformapi/pkg/config"
 	plotutils "trraformapi/pkg/plot_utils"
 	"trraformapi/pkg/schemas"
+	"trraformapi/pkg/utils"
 
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
@@ -219,15 +221,27 @@ func createSubscription(h *Handler, ctx context.Context, invoice *stripe.Invoice
 		return err
 	}
 
-	if _, err := h.MongoDB.Collection("users").UpdateOne(ctx, bson.M{
+	var user schemas.User
+	if err := h.MongoDB.Collection("users").FindOneAndUpdate(ctx, bson.M{
 		"_id": uid,
 	}, bson.M{
 		"$set": bson.M{
 			"subscription.isActive":       true,
 			"subscription.subscriptionId": invoice.Parent.SubscriptionDetails.Subscription.ID,
 		},
-	}); err != nil {
+	}, options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&user); err != nil {
 		return err
+	}
+
+	// set metadata verified true for all plots
+	for _, plotId := range user.PlotIds {
+		metadata := map[string]string{
+			"owner":    user.Username,
+			"verified": strconv.FormatBool(true),
+		}
+		if err := utils.UpdateMetadataR2(h.R2Cli, ctx, config.CF_PLOT_BUCKET, plotId+".dat", "application/octet-stream", metadata); err != nil {
+			return err
+		}
 	}
 
 	return renewSubscription(h, ctx, invoice)
@@ -304,20 +318,26 @@ func cancelSubscription(h *Handler, ctx context.Context, subscription *stripe.Su
 	}
 
 	var user schemas.User
-	if _, err := h.MongoDB.Collection("users").FindOneAndUpdate(ctx, bson.M{
+	if err := h.MongoDB.Collection("users").FindOneAndUpdate(ctx, bson.M{
 		"_id": uid,
 	}, bson.M{
 		"$set": bson.M{
 			"subscription.isActive": false,
 		},
-	}).Decode(err); err != nil {
+	}, options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(user); err != nil {
 		return err
 	}
 
-	// set meta data verified false for all plots
-	for plot
-
-	// flag all plots for update
+	// set metadata verified false for all plots
+	for _, plotId := range user.PlotIds {
+		metadata := map[string]string{
+			"owner":    user.Username,
+			"verified": strconv.FormatBool(false),
+		}
+		if err := utils.UpdateMetadataR2(h.R2Cli, ctx, config.CF_PLOT_BUCKET, plotId+".dat", "application/octet-stream", metadata); err != nil {
+			return err
+		}
+	}
 
 	return nil
 
