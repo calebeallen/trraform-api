@@ -77,7 +77,6 @@ func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		Username:     utils.NewUsername(),
 		Email:        reqData.Email,
 		PassHash:     string(passHash),
-		PlotCredits:  1,
 		PlotIds:      []string{},
 		PurchasedIds: []string{},
 		Offenses:     []schemas.Offense{},

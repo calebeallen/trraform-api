@@ -61,8 +61,10 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		"googleId": googleId,
 	}).Decode(&user)
 
+	accountCreated := errors.Is(err, mongo.ErrNoDocuments)
+
 	// create new user if none found
-	if errors.Is(err, mongo.ErrNoDocuments) {
+	if accountCreated {
 
 		// email must be provided
 		email, ok := googleToken.Claims["email"].(string)
@@ -80,14 +82,17 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 			Username:     utils.NewUsername(),
 			GoogleId:     googleId,
 			Email:        strings.ToLower(email),
-			PlotCredits:  1,
 			PlotIds:      []string{},
 			PurchasedIds: []string{},
 			Offenses:     []schemas.Offense{},
 		}
 
-		if _, err := usersCollection.InsertOne(ctx, user); err != nil {
+		res, err := usersCollection.InsertOne(ctx, &user)
+		if err != nil {
 			if mongo.IsDuplicateKeyError(err) {
+				resParams.ResData = &struct {
+					Conflict bool `json:"conflict"`
+				}{Conflict: true}
 				resParams.Code = http.StatusConflict
 			} else {
 				resParams.Code = http.StatusInternalServerError
@@ -96,6 +101,8 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 			h.Res(resParams)
 			return
 		}
+
+		user.Id = res.InsertedID.(bson.ObjectID)
 
 	} else if err != nil {
 		resParams.Code = http.StatusInternalServerError
@@ -115,8 +122,12 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resParams.ResData = &struct {
-		Token string `json:"token"`
-	}{Token: authTokenStr}
+		Token          string `json:"token"`
+		AccountCreated bool   `json:"accountCreated"`
+	}{
+		Token:          authTokenStr,
+		AccountCreated: accountCreated,
+	}
 	resParams.Code = http.StatusOK
 	h.Res(resParams)
 

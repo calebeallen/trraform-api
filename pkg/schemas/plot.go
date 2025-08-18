@@ -8,7 +8,7 @@ import (
 
 type Plot struct {
 	Id     bson.ObjectID `bson:"_id,omitempty"`
-	PlotId string        `bson:"plotId"`
+	PlotId uint64        `bson:"plotId"`
 	Ctime  time.Time     `bson:"ctime"`
 	Owner  bson.ObjectID `bson:"owner"`
 	Votes  int           `bson:"votes"`

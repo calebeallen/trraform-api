@@ -31,6 +31,7 @@ type User struct {
 	UnameChangedAt time.Time     `bson:"unameChangedAt"`
 	StripeCustomer string        `bson:"stripeCustomer"`
 	Subscription   Subscription  `bson:"subscription"`
+	FreePlot       string        `bson:"freePlot"`
 	PlotCredits    int           `bson:"plotCredits"`
 	PlotIds        []string      `bson:"plotIds"`
 	PurchasedIds   []string      `bson:"purchasedIds"`

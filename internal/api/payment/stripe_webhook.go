@@ -170,7 +170,7 @@ func checkoutCompleted(h *Handler, ctx context.Context, checkoutSession *stripe.
 	now := time.Now().UTC()
 	for i := range plotIds {
 		doc := &plotDocs[i]
-		doc.PlotId = plotIdStrs[i]
+		doc.PlotId = plotIds[i].Id
 		doc.Ctime = now
 	}
 	if _, err := h.MongoDB.Collection("plots").InsertMany(ctx, plotDocs); err != nil {

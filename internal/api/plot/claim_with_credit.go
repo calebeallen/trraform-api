@@ -83,27 +83,52 @@ func (h *Handler) ClaimWithCredit(w http.ResponseWriter, r *http.Request) {
 
 	_, err = txSession.WithTransaction(ctx, func(txCtx context.Context) (interface{}, error) {
 
-		// handle plot credits
-		err := h.MongoDB.Collection("users").FindOneAndUpdate(txCtx,
+		userColl := h.MongoDB.Collection("users")
+
+		// user free plot first
+		err := userColl.FindOneAndUpdate(txCtx,
 			bson.M{
-				"_id":         uid,
-				"plotCredits": bson.M{"$gt": 0},
+				"_id":      uid,
+				"freePlot": "",
 			},
 			bson.M{
-				"$inc":      bson.M{"plotCredits": -1},
-				"$addToSet": bson.M{"plotIds": plotIdStr},
+				"$set": bson.M{
+					"freePlot": plotIdStr,
+				},
+				"$addToSet": bson.M{
+					"plotIds": plotIdStr,
+				},
 			},
 			options.FindOneAndUpdate().SetReturnDocument(options.After),
 		).Decode(&updatedUser)
+
+		// use credit if free plot
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			err = h.MongoDB.Collection("users").FindOneAndUpdate(txCtx,
+				bson.M{
+					"_id":         uid,
+					"plotCredits": bson.M{"$gt": 0},
+				},
+				bson.M{
+					"$inc": bson.M{
+						"plotCredits": -1,
+					},
+					"$addToSet": bson.M{
+						"plotIds": plotIdStr,
+					},
+				},
+				options.FindOneAndUpdate().SetReturnDocument(options.After),
+			).Decode(&updatedUser)
+		}
+
 		if err != nil {
 			return nil, err
 		}
 
 		// claim plot
-		now := time.Now().UTC()
 		plotEntry := schemas.Plot{
-			PlotId: plotIdStr,
-			Ctime:  now,
+			PlotId: plotId.Id,
+			Ctime:  time.Now().UTC(),
 			Owner:  uid,
 			Votes:  0,
 		}
